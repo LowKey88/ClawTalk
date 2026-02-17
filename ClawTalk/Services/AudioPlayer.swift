@@ -57,14 +57,21 @@ class AudioPlayer: NSObject, AVAudioPlayerDelegate {
         playData(data)
     }
     
-    private func playData(_ data: Data) {
+    func prepareAudioSession() {
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP])
-            
+        } catch {
+            print("Audio session setup failed: \(error)")
+        }
+    }
+    
+    private func playData(_ data: Data) {
+        do {
             audioPlayer = try AVAudioPlayer(data: data)
             audioPlayer?.delegate = self
             audioPlayer?.isMeteringEnabled = true
+            audioPlayer?.prepareToPlay()
             audioPlayer?.play()
             isPlaying = true
         } catch {

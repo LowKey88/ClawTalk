@@ -1,6 +1,29 @@
 import Foundation
 import SwiftUI
 
+/// Serializes TTS API calls so audio chunks are enqueued in order
+actor TTSChunkQueue {
+    private let elevenlabs: ElevenLabsService
+    private let player: AudioPlayer
+    
+    init(elevenlabs: ElevenLabsService, player: AudioPlayer) {
+        self.elevenlabs = elevenlabs
+        self.player = player
+    }
+    
+    /// Each call waits for the previous one to finish before starting
+    func enqueue(text: String) async {
+        do {
+            let audioData = try await elevenlabs.synthesize(text: text)
+            await MainActor.run {
+                player.enqueue(data: audioData)
+            }
+        } catch {
+            print("TTS chunk failed: \(error)")
+        }
+    }
+}
+
 enum ChatState {
     case idle
     case listening    // VAD mode: waiting for speech
@@ -221,6 +244,12 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
             let chunkBreaks: [Character] = [".", "!", "?", "\n", ",", ";", ":", "-"]
             let maxChunkLength = 120  // force chunk if no punctuation
             
+            // Serial actor to ensure TTS chunks are enqueued in order
+            let ttsQueue = TTSChunkQueue(elevenlabs: elevenlabs, player: player)
+            
+            // Prepare audio session once before playback starts
+            player.prepareAudioSession()
+            
             // Start audio queue
             player.startQueue { [weak self] in
                 Task { @MainActor in
@@ -236,18 +265,10 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
                 }
             }
             
-            // Helper to send a chunk to TTS
+            // Helper to send a chunk to TTS (serialized)
             func speakChunk(_ text: String) {
-                let textToSpeak = text
                 Task {
-                    do {
-                        let audioData = try await elevenlabs.synthesize(text: textToSpeak)
-                        await MainActor.run { [weak self] in
-                            self?.player.enqueue(data: audioData)
-                        }
-                    } catch {
-                        print("TTS chunk failed: \(error)")
-                    }
+                    await ttsQueue.enqueue(text: text)
                 }
             }
             
@@ -287,19 +308,14 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
             messages[messageIndex].content = fullResponse
             lastSpokenText = fullResponse.lowercased()
             
-            // Speak any remaining text that wasn't chunked
+            // Speak any remaining text that wasn't chunked (serialized via queue)
             let remaining = String(fullResponse.dropFirst(spokenUpTo)).trimmingCharacters(in: .whitespacesAndNewlines)
             if !remaining.isEmpty {
                 if state != .speaking {
                     state = .speaking
                     startSpeakingTimer()
                 }
-                do {
-                    let audioData = try await elevenlabs.synthesize(text: remaining)
-                    player.enqueue(data: audioData)
-                } catch {
-                    print("TTS remaining failed: \(error)")
-                }
+                await ttsQueue.enqueue(text: remaining)
             }
             
             // Signal no more chunks
