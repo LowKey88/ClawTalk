@@ -232,7 +232,6 @@ struct ChatView: View {
             .navigationBarHidden(true)
             .sheet(isPresented: $showSettings) {
                 SettingsView()
-                    .preferredColorScheme(settings.resolvedColorScheme)
             }
             .alert("New Conversation", isPresented: $showClearConfirm) {
                 Button("Cancel", role: .cancel) {}

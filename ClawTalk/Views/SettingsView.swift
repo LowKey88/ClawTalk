@@ -190,6 +190,14 @@ struct SettingsView: View {
                     checkConnection()
                 }
             }
+            .onChange(of: settings.appearanceMode) {
+                // Force update all windows (including this sheet) via UIKit
+                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+                    for window in windowScene.windows {
+                        window.overrideUserInterfaceStyle = settings.userInterfaceStyle
+                    }
+                }
+            }
             .sheet(item: $editingProfile) { profile in
                 ProfileEditorView(profile: profile, isNew: false)
             }
