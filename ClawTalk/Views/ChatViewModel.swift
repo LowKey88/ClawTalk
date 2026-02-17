@@ -47,6 +47,7 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
     private let recorder = AudioRecorder()
     private let player = AudioPlayer()
     private var pendingSettings: AppSettings?
+    private var levelTimer: Timer?
     
     private var currentProfileID: UUID?
     
@@ -92,9 +93,11 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
     func startRecording() {
         recorder.startRecording()
         state = .recording
+        startLevelTimer()
     }
     
     func stopAndProcess(settings: AppSettings) {
+        stopLevelTimer()
         guard let audioURL = recorder.stopRecording() else {
             state = .idle
             return
@@ -111,10 +114,12 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
         pendingSettings = settings
         state = .listening
         recorder.startListening()
+        startLevelTimer()
     }
     
     func stopHandsFree() {
         pendingSettings = nil
+        stopLevelTimer()
         recorder.stopListening()
         state = .idle
     }
@@ -286,6 +291,21 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
     
     func updateAudioLevel() {
         audioLevel = recorder.audioLevel
+    }
+    
+    private func startLevelTimer() {
+        stopLevelTimer()
+        levelTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.audioLevel = self?.recorder.audioLevel ?? 0
+            }
+        }
+    }
+    
+    private func stopLevelTimer() {
+        levelTimer?.invalidate()
+        levelTimer = nil
+        audioLevel = 0
     }
     
     func clearChat() {
