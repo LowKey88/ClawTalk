@@ -24,6 +24,7 @@ class AudioRecorder: NSObject {
     private var speechStartTime: Date?
     private var lastSpeechTime: Date?
     private var ignoreUntil: Date?
+    private var silentPlayer: AVAudioPlayer?
     
     private var recordingURL: URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("clawtalk_recording.m4a")
@@ -88,6 +89,7 @@ class AudioRecorder: NSObject {
         isSpeechDetected = false
         speechStartTime = nil
         lastSpeechTime = nil
+        startSilentAudio()
         beginRecording()
     }
     
@@ -105,8 +107,50 @@ class AudioRecorder: NSObject {
         isSpeechDetected = false
         stopMonitoring()
         audioRecorder?.stop()
+        stopSilentAudio()
         isRecording = false
         audioLevel = 0.0
+    }
+    
+    // MARK: - Silent audio (keeps app alive in background)
+    
+    private func startSilentAudio() {
+        guard silentPlayer == nil else { return }
+        let sampleRate: Double = 16000
+        let numSamples = Int(sampleRate) // 1 second
+        let dataSize = numSamples * 2
+        let fileSize = 44 + dataSize
+        
+        var data = Data()
+        data.append(contentsOf: "RIFF".utf8)
+        data.append(contentsOf: withUnsafeBytes(of: UInt32(fileSize - 8).littleEndian) { Array($0) })
+        data.append(contentsOf: "WAVE".utf8)
+        data.append(contentsOf: "fmt ".utf8)
+        data.append(contentsOf: withUnsafeBytes(of: UInt32(16).littleEndian) { Array($0) })
+        data.append(contentsOf: withUnsafeBytes(of: UInt16(1).littleEndian) { Array($0) })
+        data.append(contentsOf: withUnsafeBytes(of: UInt16(1).littleEndian) { Array($0) })
+        data.append(contentsOf: withUnsafeBytes(of: UInt32(16000).littleEndian) { Array($0) })
+        data.append(contentsOf: withUnsafeBytes(of: UInt32(32000).littleEndian) { Array($0) })
+        data.append(contentsOf: withUnsafeBytes(of: UInt16(2).littleEndian) { Array($0) })
+        data.append(contentsOf: withUnsafeBytes(of: UInt16(16).littleEndian) { Array($0) })
+        data.append(contentsOf: "data".utf8)
+        data.append(contentsOf: withUnsafeBytes(of: UInt32(dataSize).littleEndian) { Array($0) })
+        data.append(Data(count: dataSize))
+        
+        do {
+            silentPlayer = try AVAudioPlayer(data: data)
+            silentPlayer?.numberOfLoops = -1
+            silentPlayer?.volume = 0.01
+            silentPlayer?.play()
+            print("Silent audio keepalive started")
+        } catch {
+            print("Silent audio failed: \(error)")
+        }
+    }
+    
+    private func stopSilentAudio() {
+        silentPlayer?.stop()
+        silentPlayer = nil
     }
     
     // MARK: - Private
