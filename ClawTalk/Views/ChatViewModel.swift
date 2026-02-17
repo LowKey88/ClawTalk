@@ -7,6 +7,7 @@ enum ChatState {
     case recording    // actively recording speech
     case transcribing
     case thinking
+    case streaming    // receiving streaming text
     case speaking
 }
 
@@ -101,19 +102,35 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
             let userMessage = ChatMessage(role: .user, content: transcript, timestamp: Date())
             messages.append(userMessage)
             
-            // Step 2: LLM
+            // Step 2: LLM (streaming)
             state = .thinking
             let openclaw = OpenClawService(baseURL: settings.openclawURL, token: settings.gatewayToken)
-            let response = try await openclaw.sendMessage(transcript)
             
-            // Add assistant message
-            let assistantMessage = ChatMessage(role: .assistant, content: response, timestamp: Date())
+            // Create placeholder assistant message for streaming
+            let assistantMessage = ChatMessage(role: .assistant, content: "", timestamp: Date())
             messages.append(assistantMessage)
+            let messageIndex = messages.count - 1
+            
+            var firstToken = true
+            let fullResponse = try await openclaw.sendMessageStreaming(transcript) { [weak self] token in
+                Task { @MainActor in
+                    guard let self else { return }
+                    if firstToken {
+                        self.state = .streaming
+                        firstToken = false
+                    }
+                    // Append token to the streaming message
+                    self.messages[messageIndex].content += token
+                }
+            }
+            
+            // Ensure final content is complete
+            messages[messageIndex].content = fullResponse
             
             // Step 3: TTS
             state = .speaking
             let elevenlabs = ElevenLabsService(apiKey: settings.elevenlabsAPIKey, voiceID: settings.selectedVoiceID)
-            let audioData = try await elevenlabs.synthesize(text: response)
+            let audioData = try await elevenlabs.synthesize(text: fullResponse)
             
             // Play audio, then resume listening if hands-free
             player.play(data: audioData) { [weak self] in

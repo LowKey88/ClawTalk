@@ -26,6 +26,7 @@ struct ChatView: View {
                             } else if viewModel.state == .speaking {
                                 StatusBubble(text: "Speaking...", icon: "speaker.wave.2.fill")
                             }
+                            // Streaming text shows directly in message bubble (no status needed)
                         }
                         .padding()
                     }
@@ -71,6 +72,7 @@ struct ChatView: View {
                                 isRecording: viewModel.state == .recording,
                                 isDisabled: viewModel.state == .transcribing ||
                                            viewModel.state == .thinking ||
+                                           viewModel.state == .streaming ||
                                            viewModel.state == .speaking,
                                 onPress: { viewModel.startRecording() },
                                 onRelease: { viewModel.stopAndProcess(settings: settings) }
@@ -157,6 +159,7 @@ struct HandsFreeButton: View {
         switch state {
         case .listening: return .green
         case .recording: return .red
+        case .streaming: return .purple
         case .transcribing, .thinking, .speaking: return .gray
         case .idle: return .blue
         }
@@ -168,13 +171,14 @@ struct HandsFreeButton: View {
         case .recording: return "waveform"
         case .transcribing: return "text.bubble"
         case .thinking: return "brain"
+        case .streaming: return "text.cursor"
         case .speaking: return "speaker.wave.2.fill"
         case .idle: return "mic.fill"
         }
     }
     
     private var isDisabled: Bool {
-        state == .transcribing || state == .thinking || state == .speaking
+        state == .transcribing || state == .thinking || state == .streaming || state == .speaking
     }
 }
 
