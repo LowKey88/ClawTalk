@@ -52,34 +52,11 @@ class AppSettings {
         didSet { UserDefaults.standard.set(appearanceMode, forKey: "appearanceMode") }
     }
     
-    var userInterfaceStyle: UIUserInterfaceStyle {
-        switch appearanceMode {
-        case 1: return .light
-        case 2: return .dark
-        default:
-            // Resolve actual system style (.unspecified doesn't work on sheets)
-            let systemStyle = UIScreen.main.traitCollection.userInterfaceStyle
-            return systemStyle == .dark ? .dark : .light
-        }
-    }
-    
     var colorScheme: ColorScheme? {
         switch appearanceMode {
         case 1: return .light
         case 2: return .dark
         default: return nil  // follow system
-        }
-    }
-    
-    /// For sheets/modals where nil doesn't inherit properly
-    var resolvedColorScheme: ColorScheme {
-        switch appearanceMode {
-        case 1: return .light
-        case 2: return .dark
-        default:
-            // Detect current system appearance
-            let style = UITraitCollection.current.userInterfaceStyle
-            return style == .dark ? .dark : .light
         }
     }
     
