@@ -171,29 +171,15 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
             messages.append(assistantMessage)
             let messageIndex = messages.count - 1
             
-            var firstToken = true
-            let fullResponse = try await openclaw.sendMessageStreaming(transcript) { [weak self] token in
-                Task { @MainActor in
-                    guard let self else { return }
-                    if firstToken {
-                        self.state = .streaming
-                        firstToken = false
-                    }
-                    // Append token to the streaming message
-                    self.messages[messageIndex].content += token
-                }
-            }
-            
-            // Ensure final content is complete
-            messages[messageIndex].content = fullResponse
-            
-            // Step 3: TTS
-            state = .speaking
+            // Setup chunked TTS - speak while still streaming
             let elevenlabs = ElevenLabsService(apiKey: settings.elevenlabsAPIKey, voiceID: settings.selectedVoiceID)
-            let audioData = try await elevenlabs.synthesize(text: fullResponse)
+            var sentenceBuffer = ""
+            var spokenUpTo = 0
+            var firstToken = true
+            let sentenceEnders: [Character] = [".", "!", "?", "\n"]
             
-            // Play audio, then resume listening if hands-free
-            player.play(data: audioData) { [weak self] in
+            // Start audio queue
+            player.startQueue { [weak self] in
                 Task { @MainActor in
                     guard let self else { return }
                     if resumeListening && settings.isHandsFree {
@@ -203,6 +189,65 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
                     }
                 }
             }
+            
+            let fullResponse = try await openclaw.sendMessageStreaming(transcript) { [weak self] token in
+                Task { @MainActor in
+                    guard let self else { return }
+                    if firstToken {
+                        self.state = .streaming
+                        firstToken = false
+                    }
+                    // Append token to the streaming message
+                    self.messages[messageIndex].content += token
+                    sentenceBuffer += token
+                    
+                    // Check if we have a complete sentence to speak
+                    if let lastChar = sentenceBuffer.last, sentenceEnders.contains(lastChar) {
+                        let chunk = sentenceBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if chunk.count >= 10 { // minimum chunk size to avoid tiny TTS calls
+                            let textToSpeak = chunk
+                            sentenceBuffer = ""
+                            spokenUpTo = self.messages[messageIndex].content.count
+                            
+                            if self.state != .speaking {
+                                self.state = .speaking
+                            }
+                            
+                            // TTS this chunk in background
+                            Task {
+                                do {
+                                    let audioData = try await elevenlabs.synthesize(text: textToSpeak)
+                                    await MainActor.run {
+                                        self.player.enqueue(data: audioData)
+                                    }
+                                } catch {
+                                    print("TTS chunk failed: \(error)")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Ensure final content is complete
+            messages[messageIndex].content = fullResponse
+            
+            // Speak any remaining text that wasn't chunked
+            let remaining = String(fullResponse.dropFirst(spokenUpTo)).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !remaining.isEmpty {
+                if state != .speaking {
+                    state = .speaking
+                }
+                do {
+                    let audioData = try await elevenlabs.synthesize(text: remaining)
+                    player.enqueue(data: audioData)
+                } catch {
+                    print("TTS remaining failed: \(error)")
+                }
+            }
+            
+            // Signal no more chunks
+            player.finishQueue()
             
         } catch {
             print("Error: \(error)")
