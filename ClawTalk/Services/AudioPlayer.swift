@@ -1,8 +1,9 @@
 import Foundation
 import AVFoundation
+import Combine
 
-class AudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
-    @Published var isPlaying = false
+class AudioPlayer: NSObject, AVAudioPlayerDelegate {
+    var isPlaying = false
     
     private var audioPlayer: AVAudioPlayer?
     private var completion: (() -> Void)?

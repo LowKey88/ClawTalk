@@ -1,9 +1,10 @@
 import Foundation
 import AVFoundation
+import Combine
 
-class AudioRecorder: NSObject, ObservableObject {
-    @Published var isRecording = false
-    @Published var audioLevel: Float = 0.0
+class AudioRecorder: NSObject {
+    var isRecording = false
+    var audioLevel: Float = 0.0
     
     private var audioRecorder: AVAudioRecorder?
     private var levelTimer: Timer?
@@ -35,7 +36,6 @@ class AudioRecorder: NSObject, ObservableObject {
         ]
         
         do {
-            // Clean up previous recording
             try? FileManager.default.removeItem(at: recordingURL)
             
             audioRecorder = try AVAudioRecorder(url: recordingURL, settings: settings)
@@ -43,15 +43,11 @@ class AudioRecorder: NSObject, ObservableObject {
             audioRecorder?.record()
             isRecording = true
             
-            // Monitor audio levels for waveform
             levelTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
                 self?.audioRecorder?.updateMeters()
                 let level = self?.audioRecorder?.averagePower(forChannel: 0) ?? -160
-                // Normalize from -160..0 to 0..1
                 let normalized = max(0, (level + 50) / 50)
-                DispatchQueue.main.async {
-                    self?.audioLevel = normalized
-                }
+                self?.audioLevel = normalized
             }
         } catch {
             print("Recording failed: \(error)")
