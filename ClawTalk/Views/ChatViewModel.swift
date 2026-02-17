@@ -14,7 +14,9 @@ enum ChatState {
 @Observable
 @MainActor
 class ChatViewModel: NSObject, AudioRecorderDelegate {
-    var messages: [ChatMessage] = []
+    var messages: [ChatMessage] = [] {
+        didSet { saveMessages() }
+    }
     var state: ChatState = .idle
     var audioLevel: Float = 0.0
     
@@ -25,6 +27,21 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
     override init() {
         super.init()
         recorder.vadDelegate = self
+        loadMessages()
+    }
+    
+    // MARK: - Persistence
+    
+    private func saveMessages() {
+        if let data = try? JSONEncoder().encode(messages) {
+            UserDefaults.standard.set(data, forKey: "chatMessages")
+        }
+    }
+    
+    private func loadMessages() {
+        guard let data = UserDefaults.standard.data(forKey: "chatMessages"),
+              let saved = try? JSONDecoder().decode([ChatMessage].self, from: data) else { return }
+        messages = saved
     }
     
     // MARK: - Push-to-talk
@@ -174,5 +191,6 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
     
     func clearChat() {
         messages.removeAll()
+        UserDefaults.standard.removeObject(forKey: "chatMessages")
     }
 }
