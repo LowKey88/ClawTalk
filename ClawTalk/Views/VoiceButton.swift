@@ -34,6 +34,8 @@ struct VoiceButton: View {
                     .onEnded { _ in
                         guard isPressed else { return }
                         isPressed = false
+                        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+                        impactFeedback.impactOccurred()
                         onRelease()
                     }
             )

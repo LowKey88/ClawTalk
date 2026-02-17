@@ -68,7 +68,11 @@ struct ChatView: View {
                     
                     // Skip button when speaking
                     if viewModel.state == .speaking {
-                        Button(action: { viewModel.skipSpeaking(settings: settings) }) {
+                        Button(action: {
+                            let impact = UIImpactFeedbackGenerator(style: .medium)
+                            impact.impactOccurred()
+                            viewModel.skipSpeaking(settings: settings)
+                        }) {
                             HStack(spacing: 6) {
                                 Image(systemName: "forward.fill")
                                 Text("Skip")
@@ -142,6 +146,8 @@ struct ChatView: View {
                     Menu {
                         ForEach(settings.profiles) { profile in
                             Button(action: {
+                                let impact = UINotificationFeedbackGenerator()
+                                impact.notificationOccurred(.success)
                                 settings.setActiveProfile(profile.id)
                                 viewModel.clearChat()
                             }) {
