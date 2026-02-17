@@ -7,6 +7,7 @@ struct ChatView: View {
     @State private var showSettings = false
     @State private var showClearConfirm = false
     @State private var copiedMessageId: UUID?
+    @State private var isConnected: Bool = false
     
     var body: some View {
         NavigationStack {
@@ -156,8 +157,13 @@ struct ChatView: View {
                         HStack(spacing: 4) {
                             if let profile = settings.activeProfile {
                                 Text(profile.emoji)
-                                Text(profile.name)
-                                    .fontWeight(.semibold)
+                                HStack(spacing: 3) {
+                                    Text(profile.name)
+                                        .fontWeight(.semibold)
+                                    Circle()
+                                        .fill(isConnected ? .green : .red)
+                                        .frame(width: 8, height: 8)
+                                }
                             } else {
                                 Text("ClawTalk")
                                     .fontWeight(.semibold)
@@ -193,6 +199,7 @@ struct ChatView: View {
             }
             .onAppear {
                 viewModel.switchToProfile(settings.activeProfileID)
+                checkServerStatus()
             }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
                 // Auto-restart listening if hands-free was active but mic died in background
@@ -207,6 +214,38 @@ struct ChatView: View {
                 // Stop any active recording/listening before switching
                 viewModel.stopHandsFree()
                 viewModel.switchToProfile(newID)
+                checkServerStatus()
+            }
+        }
+    }
+    
+    private func checkServerStatus() {
+        guard let profile = settings.activeProfile,
+              !profile.openclawURL.isEmpty else {
+            isConnected = false
+            return
+        }
+        let baseURL = profile.openclawURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let url = URL(string: "\(baseURL)/v1/chat/completions") else {
+            isConnected = false
+            return
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        request.setValue("Bearer \(profile.gatewayToken)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 5
+        
+        Task {
+            do {
+                let (_, response) = try await URLSession.shared.data(for: request)
+                if let http = response as? HTTPURLResponse,
+                   (200...499).contains(http.statusCode) && http.statusCode != 401 && http.statusCode != 403 {
+                    isConnected = true
+                } else {
+                    isConnected = false
+                }
+            } catch {
+                isConnected = false
             }
         }
     }
