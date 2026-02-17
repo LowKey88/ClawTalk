@@ -16,7 +16,7 @@ class OpenClawService {
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("main", forHTTPHeaderField: "x-openclaw-session-key")
+        request.setValue("agent:main:main", forHTTPHeaderField: "x-openclaw-session-key")
         request.timeoutInterval = 60
         
         // Add to conversation history
