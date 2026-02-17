@@ -87,9 +87,17 @@ class AppSettings {
     var selectedVoiceName: String { activeProfile?.voiceName ?? "Default" }
     
     var isConfigured: Bool {
-        activeProfile?.isConfigured == true &&
-        !openaiAPIKey.isEmpty &&
-        !elevenlabsAPIKey.isEmpty
+        guard let profile = activeProfile else {
+            // Fallback: if profiles exist but no active, auto-select first
+            if let first = profiles.first {
+                activeProfileID = first.id
+                return first.isConfigured && !openaiAPIKey.isEmpty && !elevenlabsAPIKey.isEmpty
+            }
+            return false
+        }
+        return profile.isConfigured &&
+               !openaiAPIKey.isEmpty &&
+               !elevenlabsAPIKey.isEmpty
     }
     
     // MARK: Profile management
@@ -98,7 +106,8 @@ class AppSettings {
         var list = profiles
         list.append(profile)
         profiles = list
-        if activeProfileID == nil {
+        // Always set as active if it's the first or no active set
+        if activeProfileID == nil || list.count == 1 {
             activeProfileID = profile.id
         }
     }

@@ -17,6 +17,7 @@ struct ContentView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }
+        .id(settings.activeProfileID?.uuidString ?? "none")
     }
 }
 
