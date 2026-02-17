@@ -51,6 +51,7 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
     private var levelTimer: Timer?
     
     private var currentProfileID: UUID?
+    private var lastSpokenText: String = ""
     
     override init() {
         super.init()
@@ -177,6 +178,17 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
                 return
             }
             
+            // Echo detection: discard if transcript matches recent TTS output
+            if !lastSpokenText.isEmpty && isEcho(transcript: transcript, spokenText: lastSpokenText) {
+                print("Echo detected, discarding: \(transcript)")
+                if resumeListening {
+                    startHandsFree(settings: settings)
+                } else {
+                    state = .idle
+                }
+                return
+            }
+            
             // Add user message
             let userMessage = ChatMessage(role: .user, content: transcript, timestamp: Date())
             messages.append(userMessage)
@@ -263,6 +275,7 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
             
             // Ensure final content is complete
             messages[messageIndex].content = fullResponse
+            lastSpokenText = fullResponse.lowercased()
             
             // Speak any remaining text that wasn't chunked
             let remaining = String(fullResponse.dropFirst(spokenUpTo)).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -345,6 +358,25 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
         levelTimer = nil
         audioLevel = 0
         speakingLevel = 0
+    }
+    
+    // MARK: - Echo detection
+    
+    private func isEcho(transcript: String, spokenText: String) -> Bool {
+        let t = transcript.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let s = spokenText
+        
+        // Check if transcript words appear in spoken text
+        let tWords = Set(t.split(separator: " ").map(String.init))
+        let sWords = Set(s.split(separator: " ").map(String.init))
+        
+        guard !tWords.isEmpty else { return false }
+        
+        let overlap = tWords.intersection(sWords).count
+        let ratio = Double(overlap) / Double(tWords.count)
+        
+        // If >40% of transcript words match spoken text, it's echo
+        return ratio > 0.4
     }
     
     func clearChat() {
