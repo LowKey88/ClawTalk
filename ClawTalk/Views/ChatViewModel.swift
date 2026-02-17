@@ -176,7 +176,9 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
             var sentenceBuffer = ""
             var spokenUpTo = 0
             var firstToken = true
-            let sentenceEnders: [Character] = [".", "!", "?", "\n"]
+            var isFirstChunk = true
+            let chunkBreaks: [Character] = [".", "!", "?", "\n", ",", ";", ":", "-"]
+            let maxChunkLength = 120  // force chunk if no punctuation
             
             // Start audio queue
             player.startQueue { [weak self] in
@@ -186,6 +188,21 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
                         self.startHandsFree(settings: settings)
                     } else {
                         self.state = .idle
+                    }
+                }
+            }
+            
+            // Helper to send a chunk to TTS
+            func speakChunk(_ text: String) {
+                let textToSpeak = text
+                Task {
+                    do {
+                        let audioData = try await elevenlabs.synthesize(text: textToSpeak)
+                        await MainActor.run { [weak self] in
+                            self?.player.enqueue(data: audioData)
+                        }
+                    } catch {
+                        print("TTS chunk failed: \(error)")
                     }
                 }
             }
@@ -201,30 +218,22 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
                     self.messages[messageIndex].content += token
                     sentenceBuffer += token
                     
-                    // Check if we have a complete sentence to speak
-                    if let lastChar = sentenceBuffer.last, sentenceEnders.contains(lastChar) {
-                        let chunk = sentenceBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if chunk.count >= 10 { // minimum chunk size to avoid tiny TTS calls
-                            let textToSpeak = chunk
-                            sentenceBuffer = ""
-                            spokenUpTo = self.messages[messageIndex].content.count
-                            
-                            if self.state != .speaking {
-                                self.state = .speaking
-                            }
-                            
-                            // TTS this chunk in background
-                            Task {
-                                do {
-                                    let audioData = try await elevenlabs.synthesize(text: textToSpeak)
-                                    await MainActor.run {
-                                        self.player.enqueue(data: audioData)
-                                    }
-                                } catch {
-                                    print("TTS chunk failed: \(error)")
-                                }
-                            }
+                    // Determine if we should chunk now
+                    let trimmed = sentenceBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let minLength = isFirstChunk ? 5 : 8  // lower threshold for first chunk (faster start)
+                    let hasBreak = trimmed.last.map { chunkBreaks.contains($0) } ?? false
+                    let shouldChunk = (hasBreak && trimmed.count >= minLength) || trimmed.count >= maxChunkLength
+                    
+                    if shouldChunk && !trimmed.isEmpty {
+                        sentenceBuffer = ""
+                        spokenUpTo = self.messages[messageIndex].content.count
+                        isFirstChunk = false
+                        
+                        if self.state != .speaking {
+                            self.state = .speaking
                         }
+                        
+                        speakChunk(trimmed)
                     }
                 }
             }
