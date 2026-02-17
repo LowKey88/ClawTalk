@@ -13,7 +13,6 @@ struct ClawTalkApp: App {
             ContentView()
                 .environment(settings)
                 .preferredColorScheme(settings.colorScheme)
-                .id(settings.appearanceMode) // force view refresh on theme change
                 .onAppear {
                     settings.migrateIfNeeded()
                     configureAudioForBackground()

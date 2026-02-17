@@ -182,6 +182,7 @@ struct ChatView: View {
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView()
+                    .preferredColorScheme(settings.colorScheme)
             }
             .alert("New Conversation", isPresented: $showClearConfirm) {
                 Button("Cancel", role: .cancel) {}
@@ -209,6 +210,7 @@ struct ChatView: View {
                 viewModel.switchToProfile(newID)
             }
         }
+        .preferredColorScheme(settings.colorScheme)
     }
     
     private func scrollToBottom(proxy: ScrollViewProxy) {
