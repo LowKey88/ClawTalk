@@ -47,6 +47,20 @@ class AppSettings {
         set { UserDefaults.standard.set(newValue, forKey: "isHandsFree") }
     }
     
+    // 0 = system, 1 = light, 2 = dark
+    var appearanceMode: Int {
+        get { UserDefaults.standard.integer(forKey: "appearanceMode") }
+        set { UserDefaults.standard.set(newValue, forKey: "appearanceMode") }
+    }
+    
+    var colorScheme: ColorScheme? {
+        switch appearanceMode {
+        case 1: return .light
+        case 2: return .dark
+        default: return nil
+        }
+    }
+    
     // MARK: Profiles (stored properties for SwiftUI observation)
     
     var profiles: [BotProfile] = [] {

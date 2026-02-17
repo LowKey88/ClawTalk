@@ -5,6 +5,8 @@ struct ChatView: View {
     @Environment(AppSettings.self) var settings
     @State private var viewModel = ChatViewModel()
     @State private var showSettings = false
+    @State private var showClearConfirm = false
+    @State private var copiedMessageId: UUID?
     
     var body: some View {
         NavigationStack {
@@ -14,8 +16,24 @@ struct ChatView: View {
                     ScrollView {
                         LazyVStack(spacing: 12) {
                             ForEach(viewModel.messages) { message in
-                                MessageBubble(message: message)
-                                    .id(message.id)
+                                MessageBubble(
+                                    message: message,
+                                    botEmoji: settings.activeProfile?.emoji ?? "🤖",
+                                    isCopied: copiedMessageId == message.id
+                                )
+                                .id(message.id)
+                                .onLongPressGesture {
+                                    UIPasteboard.general.string = message.content
+                                    let impact = UINotificationFeedbackGenerator()
+                                    impact.notificationOccurred(.success)
+                                    copiedMessageId = message.id
+                                    // Reset after 1.5s
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                        if copiedMessageId == message.id {
+                                            copiedMessageId = nil
+                                        }
+                                    }
+                                }
                             }
                             
                             if viewModel.state != .idle {
@@ -44,6 +62,10 @@ struct ChatView: View {
                     // Waveform
                     if viewModel.state == .recording || viewModel.state == .listening {
                         WaveformView(level: viewModel.audioLevel)
+                            .frame(height: 40)
+                            .padding(.horizontal)
+                    } else if viewModel.state == .speaking {
+                        SpeakingWaveformView()
                             .frame(height: 40)
                             .padding(.horizontal)
                     }
@@ -151,14 +173,21 @@ struct ChatView: View {
                     }
                 }
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: { viewModel.clearChat() }) {
-                        Image(systemName: "trash")
+                    Button(action: { showClearConfirm = true }) {
+                        Image(systemName: "square.and.pencil")
                     }
-                    .foregroundColor(.red)
                 }
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView()
+            }
+            .alert("New Conversation", isPresented: $showClearConfirm) {
+                Button("Cancel", role: .cancel) {}
+                Button("Clear", role: .destructive) {
+                    viewModel.clearChat()
+                }
+            } message: {
+                Text("Start a new conversation? Current messages will be cleared.")
             }
             .onAppear {
                 viewModel.switchToProfile(settings.activeProfileID)
@@ -241,6 +270,8 @@ struct HandsFreeButton: View {
 
 struct MessageBubble: View {
     let message: ChatMessage
+    var botEmoji: String = "🤖"
+    var isCopied: Bool = false
     
     var isUser: Bool { message.role == .user }
     
@@ -250,16 +281,32 @@ struct MessageBubble: View {
             
             VStack(alignment: isUser ? .trailing : .leading, spacing: 4) {
                 if !isUser {
-                    Text("🐙")
+                    Text(botEmoji)
                         .font(.caption)
                 }
                 
-                Text(message.content)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(isUser ? Color.blue : Color(.systemGray5))
-                    .foregroundColor(isUser ? .white : .primary)
-                    .cornerRadius(18)
+                ZStack(alignment: .topTrailing) {
+                    Text(message.content)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(isUser ? Color.blue : Color(.systemGray5))
+                        .foregroundColor(isUser ? .white : .primary)
+                        .cornerRadius(18)
+                    
+                    if isCopied {
+                        Text("Copied!")
+                            .font(.caption2)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.green)
+                            .cornerRadius(8)
+                            .offset(y: -10)
+                            .transition(.scale.combined(with: .opacity))
+                    }
+                }
+                .animation(.spring(response: 0.3), value: isCopied)
                 
                 Text(message.timestamp, style: .time)
                     .font(.caption2)
@@ -291,6 +338,31 @@ struct StatusBubble: View {
             
             Spacer()
         }
+    }
+}
+
+struct SpeakingWaveformView: View {
+    @State private var phase: CGFloat = 0
+    
+    let timer = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
+    
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<12, id: \.self) { index in
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.orange.opacity(0.8))
+                    .frame(width: 4, height: barHeight(for: index))
+                    .animation(.easeInOut(duration: 0.15), value: phase)
+            }
+        }
+        .onReceive(timer) { _ in
+            phase += 0.3
+        }
+    }
+    
+    private func barHeight(for index: Int) -> CGFloat {
+        let value = sin(phase + CGFloat(index) * 0.5)
+        return CGFloat(10 + 20 * abs(value))
     }
 }
 

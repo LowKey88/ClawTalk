@@ -6,6 +6,7 @@ struct SettingsView: View {
     @State private var showAPIKeys = false
     @State private var editingProfile: BotProfile?
     @State private var showAddProfile = false
+    @State private var connectionStatus: ConnectionStatus = .unknown
     
     var body: some View {
         @Bindable var settings = settings
@@ -117,7 +118,19 @@ struct SettingsView: View {
                          "Hold the mic button to talk")
                 }
                 
-                // Status
+                // Appearance
+                Section {
+                    Picker("Theme", selection: $settings.appearanceMode) {
+                        Text("System").tag(0)
+                        Text("Light").tag(1)
+                        Text("Dark").tag(2)
+                    }
+                    .pickerStyle(.segmented)
+                } header: {
+                    Label("Appearance", systemImage: "paintbrush.fill")
+                }
+                
+                // Connection Status
                 Section {
                     if let profile = settings.activeProfile {
                         HStack {
@@ -133,16 +146,31 @@ struct SettingsView: View {
                         }
                     }
                     HStack {
-                        Text("Status")
+                        Text("Server")
                         Spacer()
-                        if settings.isConfigured {
-                            Label("Ready", systemImage: "checkmark.circle.fill")
+                        switch connectionStatus {
+                        case .unknown:
+                            Label("Not checked", systemImage: "questionmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        case .checking:
+                            ProgressView()
+                                .scaleEffect(0.8)
+                        case .connected:
+                            Label("Connected", systemImage: "checkmark.circle.fill")
                                 .foregroundColor(.green)
-                        } else {
-                            Label("Not configured", systemImage: "xmark.circle.fill")
+                        case .failed(let msg):
+                            Label(msg, systemImage: "xmark.circle.fill")
                                 .foregroundColor(.red)
                         }
                     }
+                    
+                    Button(action: { checkConnection() }) {
+                        HStack {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                            Text("Test Connection")
+                        }
+                    }
+                    .disabled(!settings.isConfigured)
                 } header: {
                     Label("Connection", systemImage: "wifi")
                 }
@@ -319,6 +347,49 @@ struct ProfileEditorView: View {
                 isLoadingVoices = false
             } catch {
                 isLoadingVoices = false
+            }
+        }
+    }
+}
+
+enum ConnectionStatus {
+    case unknown
+    case checking
+    case connected
+    case failed(String)
+}
+
+extension SettingsView {
+    func checkConnection() {
+        guard let profile = settings.activeProfile else { return }
+        connectionStatus = .checking
+        
+        // Try hitting the OpenClaw models endpoint
+        let urlString = profile.openclawURL.hasSuffix("/")
+            ? "\(profile.openclawURL)models"
+            : "\(profile.openclawURL)/models"
+        
+        guard let url = URL(string: urlString) else {
+            connectionStatus = .failed("Invalid URL")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(profile.gatewayToken)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 10
+        
+        Task {
+            do {
+                let (_, response) = try await URLSession.shared.data(for: request)
+                if let http = response as? HTTPURLResponse, http.statusCode == 200 {
+                    connectionStatus = .connected
+                } else if let http = response as? HTTPURLResponse {
+                    connectionStatus = .failed("HTTP \(http.statusCode)")
+                } else {
+                    connectionStatus = .failed("Unknown error")
+                }
+            } catch {
+                connectionStatus = .failed("Unreachable")
             }
         }
     }

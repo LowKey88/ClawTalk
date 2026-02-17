@@ -8,7 +8,7 @@ struct ClawTalkApp: App {
         WindowGroup {
             ContentView()
                 .environment(settings)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(settings.colorScheme)
                 .onAppear {
                     settings.migrateIfNeeded()
                 }
