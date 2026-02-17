@@ -31,12 +31,6 @@ class WhisperService {
         body.append("Content-Disposition: form-data; name=\"model\"\r\n\r\n".data(using: .utf8)!)
         body.append("gpt-4o-mini-transcribe\r\n".data(using: .utf8)!)
         
-        // Prompt hint — guide Whisper to transcribe as-is (no translation)
-        // Manglish style: mix of English and Malay, transcribe verbatim
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"prompt\"\r\n\r\n".data(using: .utf8)!)
-        body.append("Transcribe verbatim. Speaker uses Manglish (English and Malay mix). Do not translate.\r\n".data(using: .utf8)!)
-        
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
         
         request.httpBody = body
