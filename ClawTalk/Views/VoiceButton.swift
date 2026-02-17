@@ -54,5 +54,4 @@ struct VoiceButton: View {
         VoiceButton(isRecording: true, isDisabled: false, onPress: {}, onRelease: {})
         VoiceButton(isRecording: false, isDisabled: true, onPress: {}, onRelease: {})
     }
-    .preferredColorScheme(.dark)
 }

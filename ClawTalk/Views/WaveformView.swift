@@ -28,5 +28,4 @@ struct WaveformView: View {
     WaveformView(level: 0.5)
         .frame(height: 40)
         .padding()
-        .preferredColorScheme(.dark)
 }
