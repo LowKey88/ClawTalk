@@ -76,6 +76,10 @@ class AudioRecorder: NSObject {
     /// Ignore VAD input for a brief period (avoids TTS echo pickup)
     func setIgnorePeriod(_ seconds: TimeInterval) {
         ignoreUntil = Date().addingTimeInterval(seconds)
+        // Reset any in-progress speech detection
+        isSpeechDetected = false
+        speechStartTime = nil
+        lastSpeechTime = nil
     }
     
     func stopListening() {
