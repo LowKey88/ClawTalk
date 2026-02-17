@@ -43,6 +43,7 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
     }
     var state: ChatState = .idle
     var audioLevel: Float = 0.0
+    var speakingLevel: Float = 0.0
     
     private let recorder = AudioRecorder()
     private let player = AudioPlayer()
@@ -189,6 +190,7 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
             player.startQueue { [weak self] in
                 Task { @MainActor in
                     guard let self else { return }
+                    self.stopSpeakingTimer()
                     if resumeListening && settings.isHandsFree {
                         // Brief ignore period to avoid picking up TTS echo
                         self.recorder.setIgnorePeriod(1.2)
@@ -238,6 +240,7 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
                         
                         if self.state != .speaking {
                             self.state = .speaking
+                            self.startSpeakingTimer()
                         }
                         
                         speakChunk(trimmed)
@@ -253,6 +256,7 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
             if !remaining.isEmpty {
                 if state != .speaking {
                     state = .speaking
+                    startSpeakingTimer()
                 }
                 do {
                     let audioData = try await elevenlabs.synthesize(text: remaining)
@@ -282,6 +286,7 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
     
     func skipSpeaking(settings: AppSettings) {
         player.stop()
+        stopSpeakingTimer()
         if settings.isHandsFree {
             startHandsFree(settings: settings)
         } else {
@@ -297,15 +302,36 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
         stopLevelTimer()
         levelTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                self?.audioLevel = self?.recorder.audioLevel ?? 0
+                guard let self else { return }
+                self.audioLevel = self.recorder.audioLevel
+                self.player.updateMeters()
+                self.speakingLevel = self.player.audioLevel
             }
         }
+    }
+    
+    func startSpeakingTimer() {
+        stopLevelTimer()
+        levelTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.player.updateMeters()
+                self.speakingLevel = self.player.audioLevel
+            }
+        }
+    }
+    
+    func stopSpeakingTimer() {
+        levelTimer?.invalidate()
+        levelTimer = nil
+        speakingLevel = 0
     }
     
     private func stopLevelTimer() {
         levelTimer?.invalidate()
         levelTimer = nil
         audioLevel = 0
+        speakingLevel = 0
     }
     
     func clearChat() {

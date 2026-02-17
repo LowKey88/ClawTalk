@@ -4,6 +4,7 @@ import Combine
 
 class AudioPlayer: NSObject, AVAudioPlayerDelegate {
     var isPlaying = false
+    var audioLevel: Float = 0.0
     
     private var audioPlayer: AVAudioPlayer?
     private var completion: (() -> Void)?
@@ -63,6 +64,7 @@ class AudioPlayer: NSObject, AVAudioPlayerDelegate {
             
             audioPlayer = try AVAudioPlayer(data: data)
             audioPlayer?.delegate = self
+            audioPlayer?.isMeteringEnabled = true
             audioPlayer?.play()
             isPlaying = true
         } catch {
@@ -79,8 +81,20 @@ class AudioPlayer: NSObject, AVAudioPlayerDelegate {
     func stop() {
         audioPlayer?.stop()
         isPlaying = false
+        audioLevel = 0.0
         queue.removeAll()
         isQueueMode = false
+    }
+    
+    func updateMeters() {
+        guard isPlaying, let player = audioPlayer else {
+            audioLevel = 0.0
+            return
+        }
+        player.updateMeters()
+        let level = player.averagePower(forChannel: 0)
+        let normalized = max(0, (level + 50) / 50)
+        audioLevel = normalized
     }
     
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {

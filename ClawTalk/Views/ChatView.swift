@@ -65,7 +65,7 @@ struct ChatView: View {
                             .frame(height: 40)
                             .padding(.horizontal)
                     } else if viewModel.state == .speaking {
-                        SpeakingWaveformView()
+                        WaveformView(level: viewModel.speakingLevel, color: .orange)
                             .frame(height: 40)
                             .padding(.horizontal)
                     }
@@ -338,31 +338,6 @@ struct StatusBubble: View {
             
             Spacer()
         }
-    }
-}
-
-struct SpeakingWaveformView: View {
-    @State private var phase: CGFloat = 0
-    
-    let timer = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
-    
-    var body: some View {
-        HStack(spacing: 3) {
-            ForEach(0..<12, id: \.self) { index in
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.orange.opacity(0.8))
-                    .frame(width: 4, height: barHeight(for: index))
-                    .animation(.easeInOut(duration: 0.15), value: phase)
-            }
-        }
-        .onReceive(timer) { _ in
-            phase += 0.3
-        }
-    }
-    
-    private func barHeight(for index: Int) -> CGFloat {
-        let value = sin(phase + CGFloat(index) * 0.5)
-        return CGFloat(10 + 20 * abs(value))
     }
 }
 

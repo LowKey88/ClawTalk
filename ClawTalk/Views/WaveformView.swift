@@ -2,6 +2,7 @@ import SwiftUI
 
 struct WaveformView: View {
     let level: Float
+    var color: Color = .red
     
     @State private var bars: [CGFloat] = Array(repeating: 0.1, count: 30)
     
@@ -9,7 +10,7 @@ struct WaveformView: View {
         HStack(spacing: 3) {
             ForEach(0..<bars.count, id: \.self) { index in
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.red.opacity(0.8))
+                    .fill(color.opacity(0.8))
                     .frame(width: 4, height: max(4, bars[index] * 40))
             }
         }
