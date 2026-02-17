@@ -208,7 +208,7 @@ struct ProfileEditorView: View {
     @State private var voices: [Voice] = []
     @State private var isLoadingVoices = false
     
-    let emojiOptions = ["🤖", "🐙", "🦀", "🦐", "🦑", "🐟", "🐠", "🦈", "🐳", "🧠", "⚡", "🔮", "🛡️", "🎯"]
+    let emojiOptions = ["🤖", "🐙", "🦀", "🦐", "🦑", "🐟", "🐠", "🦈", "🐳", "🧠", "⚡", "🔮", "🛡️", "🎯", "👩", "👨", "🧑", "👧", "👦", "🧙‍♀️", "🧝‍♀️", "🦸‍♀️", "🦹‍♀️", "🥷", "👾", "🤡", "💀", "👻", "🐱", "🐶", "🦊", "🐰", "🦄"]
     
     var body: some View {
         NavigationStack {
