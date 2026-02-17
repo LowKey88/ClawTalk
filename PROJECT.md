@@ -107,10 +107,10 @@ ClawTalk/
 ```
 
 ## API Configuration
-- **Server:** https://botopus-api.gbhome.my
-- **Session Key:** agent:main:main (shared with Telegram)
-- **Model:** openclaw:main
-- **Streaming:** SSE (stream: true)
+- **Server:** `https://<your-openclaw-url>` (your OpenClaw instance)
+- **Session Key:** `agent:main:main` (shares context with other channels)
+- **Model:** `openclaw:main`
+- **Streaming:** SSE (`stream: true`)
 
 ## VAD Settings
 - Speech threshold: -25 dB
