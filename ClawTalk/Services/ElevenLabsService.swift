@@ -4,7 +4,7 @@ class ElevenLabsService {
     private let apiKey: String
     private var voiceID: String
     
-    init(apiKey: String, voiceID: String = "21m00Tcm4TlvDq8ikWAM") {
+    init(apiKey: String, voiceID: String = "U7vsLCpbWl9Lt8M1Gjtk") {
         self.apiKey = apiKey
         self.voiceID = voiceID
     }
@@ -15,7 +15,7 @@ class ElevenLabsService {
     
     func synthesize(text: String) async throws -> Data {
         // Default to Rachel voice if no voice selected
-        let activeVoiceID = voiceID.isEmpty ? "21m00Tcm4TlvDq8ikWAM" : voiceID
+        let activeVoiceID = voiceID.isEmpty ? "U7vsLCpbWl9Lt8M1Gjtk" : voiceID
         let url = URL(string: "https://api.elevenlabs.io/v1/text-to-speech/\(activeVoiceID)")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -25,7 +25,7 @@ class ElevenLabsService {
         
         let body: [String: Any] = [
             "text": text,
-            "model_id": "eleven_multilingual_v2",
+            "model_id": "eleven_turbo_v2_5",
             "voice_settings": [
                 "stability": 0.5,
                 "similarity_boost": 0.75
