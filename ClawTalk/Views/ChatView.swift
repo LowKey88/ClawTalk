@@ -194,6 +194,15 @@ struct ChatView: View {
             .onAppear {
                 viewModel.switchToProfile(settings.activeProfileID)
             }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+                // Auto-restart listening if hands-free was active but mic died in background
+                if settings.isHandsFree && (viewModel.state == .listening || viewModel.state == .recording) {
+                    viewModel.stopHandsFree()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        viewModel.startHandsFree(settings: settings)
+                    }
+                }
+            }
             .onChange(of: settings.activeProfileID) { _, newID in
                 // Stop any active recording/listening before switching
                 viewModel.stopHandsFree()
