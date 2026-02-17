@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 struct ChatView: View {
     @Environment(AppSettings.self) var settings
