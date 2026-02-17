@@ -135,10 +135,10 @@ struct ChatView: View {
                         scrollToBottom(proxy: proxy)
                     }
                     .onChange(of: viewModel.messages.last?.content) {
-                        scrollToBottom(proxy: proxy)
+                        scrollToBottom(proxy: proxy, animated: false)
                     }
                     .onChange(of: viewModel.state) {
-                        scrollToBottom(proxy: proxy)
+                        scrollToBottom(proxy: proxy, animated: false)
                     }
                 }
                 
@@ -293,14 +293,21 @@ struct ChatView: View {
         }
     }
     
-    private func scrollToBottom(proxy: ScrollViewProxy) {
-        withAnimation {
-            // Always scroll to status bubble if visible, otherwise last message
-            if viewModel.state != .idle {
-                proxy.scrollTo("status-bubble", anchor: .bottom)
-            } else if let last = viewModel.messages.last {
-                proxy.scrollTo(last.id, anchor: .bottom)
+    private func scrollToBottom(proxy: ScrollViewProxy, animated: Bool = true) {
+        if animated {
+            withAnimation(.easeOut(duration: 0.2)) {
+                scrollTarget(proxy: proxy)
             }
+        } else {
+            scrollTarget(proxy: proxy)
+        }
+    }
+    
+    private func scrollTarget(proxy: ScrollViewProxy) {
+        if viewModel.state != .idle {
+            proxy.scrollTo("status-bubble", anchor: .bottom)
+        } else if let last = viewModel.messages.last {
+            proxy.scrollTo(last.id, anchor: .bottom)
         }
     }
 }
