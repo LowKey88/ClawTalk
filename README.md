@@ -7,13 +7,20 @@ Talk to your AI agent in realtime using voice — lightweight alternative to ful
 ## How It Works
 
 ```
-Mic → Whisper STT → OpenClaw API → ElevenLabs TTS → Speaker
+Mic → STT → OpenClaw API (streaming) → TTS → Speaker
 ```
 
-- **Push-to-talk** or **hands-free** mode
-- Conversation history with chat bubbles
+- **Push-to-talk** or **hands-free** (VAD) mode
+- Streaming text response (word-by-word, like ChatGPT)
+- Conversation history with auto-scrolling chat bubbles
+- Skip button to cancel TTS playback
 - Voice selection from ElevenLabs library
-- Works with any OpenClaw VPS instance
+- Whisper hallucination filter
+- Works with any OpenClaw instance
+
+## Screenshots
+
+*Coming soon*
 
 ## Requirements
 
@@ -33,10 +40,27 @@ Mic → Whisper STT → OpenClaw API → ElevenLabs TTS → Speaker
 6. Pick a voice
 7. Start talking! 🎤
 
+## Tech Stack
+
+| Component | Technology |
+|-----------|-----------|
+| Language | Swift (SwiftUI, iOS 17+) |
+| STT | gpt-4o-mini-transcribe |
+| LLM | OpenClaw API (SSE streaming) |
+| TTS | ElevenLabs (eleven_turbo_v2_5) |
+| VAD | On-device audio level monitoring |
+
 ## Cost
 
-~$0.02-0.05 per exchange — same as texting your agent, plus tiny STT/TTS fees.
+~$0.02-0.04 per exchange — same as texting your agent, plus tiny STT/TTS fees.
 
 ## License
 
 MIT
+
+---
+
+<p align="center">
+  Powered by <a href="https://www.gbnetwork.my"><strong>GB Network Solutions</strong></a><br>
+  Deploy your own AI agent with <a href="https://www.gbnetwork.my/openclaw-vps">OpenClaw VPS</a>
+</p>
