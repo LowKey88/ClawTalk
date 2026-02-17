@@ -37,9 +37,11 @@ struct ClawTalkApp: App {
     }
     
     private func applyAppearance() {
-        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let window = windowScene.windows.first else { return }
-        window.overrideUserInterfaceStyle = settings.userInterfaceStyle
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
+        let style = settings.userInterfaceStyle
+        for window in windowScene.windows {
+            window.overrideUserInterfaceStyle = style
+        }
     }
     
     private func configureAudioForBackground() {
