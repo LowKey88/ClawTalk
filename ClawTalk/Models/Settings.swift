@@ -56,7 +56,10 @@ class AppSettings {
         switch appearanceMode {
         case 1: return .light
         case 2: return .dark
-        default: return .unspecified  // follow system
+        default:
+            // Resolve actual system style (.unspecified doesn't work on sheets)
+            let systemStyle = UIScreen.main.traitCollection.userInterfaceStyle
+            return systemStyle == .dark ? .dark : .light
         }
     }
     
