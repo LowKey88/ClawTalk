@@ -14,7 +14,9 @@ class ElevenLabsService {
     }
     
     func synthesize(text: String) async throws -> Data {
-        let url = URL(string: "https://api.elevenlabs.io/v1/text-to-speech/\(voiceID)")!
+        // Default to Rachel voice if no voice selected
+        let activeVoiceID = voiceID.isEmpty ? "21m00Tcm4TlvDq8ikWAM" : voiceID
+        let url = URL(string: "https://api.elevenlabs.io/v1/text-to-speech/\(activeVoiceID)")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
