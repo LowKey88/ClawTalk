@@ -48,26 +48,6 @@ struct ChatView: View {
                             .padding(.horizontal)
                     }
                     
-                    // Skip button when speaking
-                    if viewModel.state == .speaking {
-                        Button(action: {
-                            let impact = UIImpactFeedbackGenerator(style: .medium)
-                            impact.impactOccurred()
-                            viewModel.skipSpeaking(settings: settings)
-                        }) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "forward.fill")
-                                Text("Skip")
-                            }
-                            .font(.subheadline.weight(.medium))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 10)
-                            .background(Color.orange)
-                            .cornerRadius(20)
-                        }
-                    }
-                    
                     // Mic button
                     HStack {
                         Spacer()
@@ -77,7 +57,9 @@ struct ChatView: View {
                             HandsFreeButton(
                                 state: viewModel.state,
                                 onTap: {
-                                    if viewModel.state == .listening || viewModel.state == .recording {
+                                    if viewModel.state == .speaking || viewModel.state == .streaming {
+                                        viewModel.skipSpeaking(settings: settings)
+                                    } else if viewModel.state == .listening || viewModel.state == .recording {
                                         viewModel.stopHandsFree()
                                     } else if viewModel.state == .idle {
                                         viewModel.startHandsFree(settings: settings)
@@ -233,8 +215,8 @@ struct HandsFreeButton: View {
         switch state {
         case .listening: return .green
         case .recording: return .red
-        case .streaming: return .purple
-        case .transcribing, .thinking, .speaking: return .gray
+        case .streaming, .speaking: return .orange
+        case .transcribing, .thinking: return .gray
         case .idle: return .blue
         }
     }
@@ -245,14 +227,13 @@ struct HandsFreeButton: View {
         case .recording: return "waveform"
         case .transcribing: return "text.bubble"
         case .thinking: return "brain"
-        case .streaming: return "text.cursor"
-        case .speaking: return "speaker.wave.2.fill"
+        case .streaming, .speaking: return "forward.fill"
         case .idle: return "mic.fill"
         }
     }
     
     private var isDisabled: Bool {
-        state == .transcribing || state == .thinking || state == .streaming || state == .speaking
+        state == .transcribing || state == .thinking
     }
 }
 
