@@ -125,6 +125,19 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
         state = .idle
     }
     
+    /// Force-end current recording and process immediately (hands-free send button)
+    func forceEndRecording(settings: AppSettings) {
+        stopLevelTimer()
+        guard let audioURL = recorder.stopRecording() else {
+            startHandsFree(settings: settings)
+            return
+        }
+        
+        Task {
+            await processAudio(audioURL: audioURL, settings: settings, resumeListening: true)
+        }
+    }
+    
     // MARK: - AudioRecorderDelegate (VAD callbacks)
     
     nonisolated func audioRecorderDidDetectSpeechStart() {
