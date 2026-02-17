@@ -152,6 +152,7 @@ struct ChatView: View {
                 .background(Color(.systemBackground))
             }
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarRole(.editor)
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Menu {
@@ -199,18 +200,16 @@ struct ChatView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: { showSettings = true }) {
                         Image(systemName: "gearshape")
-                            .font(.system(size: 17))
-                            .foregroundColor(.primary)
+                            .font(.system(size: 18, weight: .regular))
                     }
-                    .buttonStyle(.plain)
+                    .tint(.primary)
                 }
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: { showClearConfirm = true }) {
                         Image(systemName: "square.and.pencil")
-                            .font(.system(size: 17))
-                            .foregroundColor(.primary)
+                            .font(.system(size: 18, weight: .regular))
                     }
-                    .buttonStyle(.plain)
+                    .tint(.primary)
                 }
             }
             .sheet(isPresented: $showSettings) {
