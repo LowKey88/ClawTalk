@@ -20,12 +20,16 @@ struct ChatView: View {
                             
                             if viewModel.state == .listening {
                                 StatusBubble(text: "Listening", icon: "ear.fill")
+                                    .id("status-bubble")
                             } else if viewModel.state == .transcribing {
                                 StatusBubble(text: "Transcribing", icon: "waveform")
+                                    .id("status-bubble")
                             } else if viewModel.state == .thinking {
                                 StatusBubble(text: "Thinking", icon: "brain")
+                                    .id("status-bubble")
                             } else if viewModel.state == .speaking {
                                 StatusBubble(text: "Speaking", icon: "speaker.wave.2.fill")
+                                    .id("status-bubble")
                             }
                             // Streaming text shows directly in message bubble (no status needed)
                         }
@@ -47,9 +51,12 @@ struct ChatView: View {
                         }
                     }
                     .onChange(of: viewModel.state) {
-                        // Scroll when state changes (thinking, speaking, etc.)
-                        if let last = viewModel.messages.last {
-                            withAnimation {
+                        // Scroll to status bubble or last message when state changes
+                        withAnimation {
+                            if viewModel.state == .listening || viewModel.state == .transcribing ||
+                               viewModel.state == .thinking || viewModel.state == .speaking {
+                                proxy.scrollTo("status-bubble", anchor: .bottom)
+                            } else if let last = viewModel.messages.last {
                                 proxy.scrollTo(last.id, anchor: .bottom)
                             }
                         }
