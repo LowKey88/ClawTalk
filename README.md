@@ -62,5 +62,5 @@ MIT
 
 <p align="center">
   Powered by <a href="https://www.gbnetwork.my"><strong>GB Network Solutions</strong></a><br>
-  Deploy your own AI agent with <a href="https://www.gbnetwork.my/openclaw-vps">OpenClaw VPS</a>
+  Deploy your own AI agent with <a href="https://www.gbnetwork.my/ai/openclaw-vps/">OpenClaw VPS</a>
 </p>
