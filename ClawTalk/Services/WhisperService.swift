@@ -31,10 +31,11 @@ class WhisperService {
         body.append("Content-Disposition: form-data; name=\"model\"\r\n\r\n".data(using: .utf8)!)
         body.append("whisper-1\r\n".data(using: .utf8)!)
         
-        // Language hint — keep English to prevent auto-translation
+        // Prompt hint — guide Whisper to transcribe as-is (no translation)
+        // Manglish style: mix of English and Malay, transcribe verbatim
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"language\"\r\n\r\n".data(using: .utf8)!)
-        body.append("en\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"prompt\"\r\n\r\n".data(using: .utf8)!)
+        body.append("Transcribe exactly as spoken. The speaker uses Manglish - a mix of English and Malay. Do not translate. Keep original words like testing, okay, check, server, deploy as-is.\r\n".data(using: .utf8)!)
         
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
         
