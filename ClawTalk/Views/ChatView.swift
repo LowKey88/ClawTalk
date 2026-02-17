@@ -19,13 +19,13 @@ struct ChatView: View {
                             }
                             
                             if viewModel.state == .listening {
-                                StatusBubble(text: "Listening...", icon: "ear.fill")
+                                StatusBubble(text: "Listening", icon: "ear.fill")
                             } else if viewModel.state == .transcribing {
-                                StatusBubble(text: "Transcribing...", icon: "waveform")
+                                StatusBubble(text: "Transcribing", icon: "waveform")
                             } else if viewModel.state == .thinking {
-                                StatusBubble(text: "Thinking...", icon: "brain")
+                                StatusBubble(text: "Thinking", icon: "brain")
                             } else if viewModel.state == .speaking {
-                                StatusBubble(text: "Speaking...", icon: "speaker.wave.2.fill")
+                                StatusBubble(text: "Speaking", icon: "speaker.wave.2.fill")
                             }
                             // Streaming text shows directly in message bubble (no status needed)
                         }
@@ -327,12 +327,12 @@ struct TypingDotsView: View {
     let timer = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
     
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 5) {
             ForEach(0..<3) { index in
                 Circle()
-                    .fill(Color.primary.opacity(index == activeDot ? 1.0 : 0.3))
-                    .frame(width: 6, height: 6)
-                    .scaleEffect(index == activeDot ? 1.3 : 1.0)
+                    .fill(Color.blue.opacity(index == activeDot ? 1.0 : 0.35))
+                    .frame(width: 8, height: 8)
+                    .offset(y: index == activeDot ? -4 : 0)
                     .animation(.easeInOut(duration: 0.3), value: activeDot)
             }
         }
