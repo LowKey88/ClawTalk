@@ -19,7 +19,8 @@ class OpenClawService {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("agent:main:main", forHTTPHeaderField: "x-openclaw-session-key")
-        request.timeoutInterval = 120
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 300  // 5 min for long agent runs
         
         conversationHistory.append(["role": "user", "content": text])
         let messages = Array(conversationHistory.suffix(20))
@@ -33,7 +34,13 @@ class OpenClawService {
         
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         
-        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+        // Custom session with longer timeouts for SSE streaming
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 300
+        config.timeoutIntervalForResource = 300
+        let session = URLSession(configuration: config)
+        
+        let (bytes, response) = try await session.bytes(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             throw ClawTalkError.llmFailed
