@@ -152,7 +152,6 @@ struct ChatView: View {
                 .background(Color(.systemBackground))
             }
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarRole(.editor)
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Menu {

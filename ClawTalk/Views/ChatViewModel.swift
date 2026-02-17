@@ -306,6 +306,20 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
             
             // Ensure final content is complete
             messages[messageIndex].content = fullResponse
+            
+            // Filter out silent/empty responses
+            let trimmedResponse = fullResponse.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmedResponse.isEmpty || trimmedResponse == "NO_REPLY" || trimmedResponse == "HEARTBEAT_OK" {
+                messages.remove(at: messageIndex)
+                player.stop()
+                if resumeListening && settings.isHandsFree {
+                    startHandsFree(settings: settings)
+                } else {
+                    state = .idle
+                }
+                return
+            }
+            
             lastSpokenText = fullResponse.lowercased()
             
             // Speak any remaining text that wasn't chunked (serialized via queue)

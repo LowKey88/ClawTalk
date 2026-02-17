@@ -8,6 +8,16 @@ struct ClawTalkApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @State private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     
+    init() {
+        // Remove circle backgrounds from navigation bar buttons
+        let appearance = UINavigationBarAppearance()
+        appearance.configureWithDefaultBackground()
+        appearance.buttonAppearance.normal.backgroundEffect = nil
+        appearance.doneButtonAppearance.normal.backgroundEffect = nil
+        UINavigationBar.appearance().standardAppearance = appearance
+        UINavigationBar.appearance().scrollEdgeAppearance = appearance
+    }
+    
     var body: some Scene {
         WindowGroup {
             ContentView()
