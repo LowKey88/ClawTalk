@@ -3,7 +3,7 @@ import Foundation
 struct ChatMessage: Identifiable {
     let id = UUID()
     let role: Role
-    let content: String
+    var content: String
     let timestamp: Date
     var isPlaying: Bool = false
     
