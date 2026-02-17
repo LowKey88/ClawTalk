@@ -4,78 +4,79 @@
 Native iOS app for realtime voice conversations with your OpenClaw agent.
 Lightweight alternative to ElevenLabs Conversational AI - uses STT + OpenClaw API + TTS pipeline.
 
+## Status: v1.0 COMPLETE ✅
+Built and deployed to iPhone in ~2 hours (2026-02-17).
+
 ## Architecture
 ```
 iPhone (ClawTalk App)
     |
-    |-- [Mic] Record audio
+    |-- [Mic] Record audio (+ VAD auto-detect)
     |       |
     |       v
-    |   STT (Whisper API / on-device)
+    |   STT (gpt-4o-mini-transcribe)
     |       |
     |       v
     |   Text prompt
     |       |
     |       v
-    |   POST /v1/chat/completions (OpenClaw)
+    |   POST /v1/chat/completions (OpenClaw, streaming SSE)
+    |       |-- x-openclaw-session-key: agent:main:main
+    |       |-- model: openclaw:main
+    |       v
+    |   Streaming text response (word by word)
     |       |
     |       v
-    |   Text response
-    |       |
+    |   TTS (ElevenLabs, eleven_turbo_v2_5)
+    |       |-- Voice: Botopus (U7vsLCpbWl9Lt8M1Gjtk)
     |       v
-    |   TTS (ElevenLabs API)
-    |       |
-    |       v
-    |-- [Speaker] Play audio
+    |-- [Speaker] Play audio (skip button available)
 ```
 
-## Two Modes
+## Features Completed
 
-### Mode 1: Semi-realtime (Push-to-talk)
-- Hold button to talk, release to send
-- Walkie-talkie style
-- Visual waveform while recording
-- Simple, reliable
+### v1.0 (2026-02-17) ✅
+- [x] Push-to-talk voice chat
+- [x] Hands-free VAD mode (auto-detect speech, 1.5s silence to send)
+- [x] OpenClaw API connection (configurable URL + token)
+- [x] Session routing to main session (shared with Telegram)
+- [x] Streaming text response (SSE, word-by-word like ChatGPT)
+- [x] STT: gpt-4o-mini-transcribe (half cost, better accuracy than whisper-1)
+- [x] TTS: ElevenLabs eleven_turbo_v2_5 with Botopus voice
+- [x] Whisper hallucination filter (Chinese spam, subtitle artifacts)
+- [x] Manglish prompt hint (no auto-translation)
+- [x] Chat history with auto-scroll (follows streaming)
+- [x] Skip button to cancel TTS playback
+- [x] Audio waveform visualization
+- [x] Settings screen (API keys, server URL, voice selection)
+- [x] App icon (purple octopus in speech bubble)
 
-### Mode 2: Realtime (Hands-free)
-- Voice Activity Detection (VAD) - auto detect speech
-- Auto listen after response finishes
-- Continuous conversation like phone call
-- Toggle on/off
+### v2.0 (Planned)
+- [ ] WebSocket protocol (replace REST chat completions)
+  - True cross-channel context (see Telegram messages from ClawTalk)
+  - No session busy/timeout conflicts
+  - Real-time events from Gateway
+- [ ] On-device STT (Apple Speech Recognition) - offline capable
+- [ ] Background audio (keep listening while app backgrounded)
+
+### v3.0 (Future)
+- [ ] Vision mode (camera snap + send as image to OpenClaw)
+- [ ] Widget (quick voice command from home screen)
+- [ ] Apple Watch companion
+- [ ] Shortcuts integration (Siri: "Talk to Botopus")
 
 ## Tech Stack
 
 | Component | Choice | Cost |
 |-----------|--------|------|
-| **Language** | Swift (native iOS) | - |
+| **Language** | Swift (native iOS, SwiftUI) | - |
 | **Min iOS** | 17.0 | - |
-| **STT** | OpenAI Whisper API | ~$0.006/min |
-| **LLM** | OpenClaw API (chat completions) | Normal token usage |
-| **TTS** | ElevenLabs API (text-to-speech) | ~$0.30/1000 chars |
-| **VAD** | Apple Speech framework / WebRTC VAD | Free (on-device) |
-
-## Features
-
-### MVP (v1.0)
-- [ ] Push-to-talk voice chat
-- [ ] OpenClaw API connection (configurable URL + token)
-- [ ] Whisper STT (API)
-- [ ] ElevenLabs TTS (API)
-- [ ] Chat history (text view of conversation)
-- [ ] Audio waveform visualization
-- [ ] Settings screen (API keys, server URL, voice selection)
-
-### v1.1
-- [ ] Hands-free mode (VAD)
-- [ ] On-device STT (Apple Speech Recognition) - offline capable
-- [ ] Conversation context (maintain chat history)
-- [ ] Background audio (keep listening while app backgrounded)
-
-### v1.2 (Optional)
-- [ ] Vision mode (camera snap + send as image to OpenClaw)
-- [ ] Widget (quick voice command from home screen)
-- [ ] Apple Watch companion
-- [ ] Shortcuts integration (Siri: "Talk to Botopus")
+| **UI Pattern** | @Observable (Swift 6 compatible) | - |
+| **STT** | gpt-4o-mini-transcribe | ~$0.003/min |
+| **LLM** | OpenClaw API (SSE streaming) | Normal token usage |
+| **TTS** | ElevenLabs eleven_turbo_v2_5 | ~$0.30/1000 chars |
+| **Voice** | Botopus (U7vsLCpbWl9Lt8M1Gjtk) | - |
+| **VAD** | Audio level monitoring (-25dB threshold) | Free (on-device) |
 
 ## Project Structure
 ```
@@ -84,99 +85,59 @@ ClawTalk/
 ├── ClawTalk/
 │   ├── App/
 │   │   ├── ClawTalkApp.swift          # App entry
-│   │   └── ContentView.swift          # Main UI
+│   │   └── ContentView.swift          # Main UI router
 │   ├── Views/
-│   │   ├── ChatView.swift             # Conversation view
+│   │   ├── ChatView.swift             # Conversation + controls
+│   │   ├── ChatViewModel.swift        # State management + pipeline
 │   │   ├── VoiceButton.swift          # Push-to-talk button
 │   │   ├── WaveformView.swift         # Audio visualization
 │   │   └── SettingsView.swift         # Config screen
 │   ├── Services/
-│   │   ├── AudioRecorder.swift        # Mic capture
-│   │   ├── AudioPlayer.swift          # Playback
-│   │   ├── WhisperService.swift       # STT API
-│   │   ├── OpenClawService.swift      # Chat completions API
-│   │   ├── ElevenLabsService.swift    # TTS API
-│   │   └── VADService.swift           # Voice activity detection
+│   │   ├── AudioRecorder.swift        # Mic capture + VAD
+│   │   ├── AudioPlayer.swift          # TTS playback
+│   │   ├── WhisperService.swift       # STT API + hallucination filter
+│   │   ├── OpenClawService.swift      # Chat completions (REST + SSE)
+│   │   └── ElevenLabsService.swift    # TTS API
 │   ├── Models/
 │   │   ├── Message.swift              # Chat message model
-│   │   └── Settings.swift             # App settings model
-│   └── Resources/
-│       └── Assets.xcassets
+│   │   └── Settings.swift             # App settings (@Observable)
+│   └── Assets.xcassets/
+│       └── AppIcon.appiconset/        # Purple octopus icon
 └── README.md
 ```
 
-## API Endpoints Used
+## API Configuration
+- **Server:** https://botopus-api.gbhome.my
+- **Session Key:** agent:main:main (shared with Telegram)
+- **Model:** openclaw:main
+- **Streaming:** SSE (stream: true)
 
-### 1. Whisper STT
-```
-POST https://api.openai.com/v1/audio/transcriptions
-Content-Type: multipart/form-data
-Authorization: Bearer <OPENAI_API_KEY>
-Body: file (audio), model: "whisper-1"
-Response: { "text": "transcribed text" }
-```
+## VAD Settings
+- Speech threshold: -25 dB
+- Silence timeout: 1.5 seconds
+- Min speech duration: 0.5 seconds
+- Auto-resume listening after TTS playback
 
-### 2. OpenClaw Chat Completions
-```
-POST https://<openclaw-url>/v1/chat/completions
-Authorization: Bearer <GATEWAY_TOKEN>
-Content-Type: application/json
-Body: { "model": "auto", "messages": [...] }
-Response: { "choices": [{ "message": { "content": "response" } }] }
-```
+## Known Limitations
+- **Session conflict:** When main session is busy (e.g., generating images), ClawTalk may timeout. Rare in normal use.
+- **No cross-channel visibility:** ClawTalk messages not visible in Telegram and vice versa (fix: v2 WebSocket)
+- **STT accuracy:** gpt-4o-mini-transcribe occasionally misheard words (e.g., "GB" -> "TV"), but LLM compensates with context
+- **Whisper hallucination:** Filtered but not 100% - silence/noise can occasionally trigger false transcription
 
-### 3. ElevenLabs TTS
-```
-POST https://api.elevenlabs.io/v1/text-to-speech/<VOICE_ID>
-xi-api-key: <ELEVENLABS_API_KEY>
-Content-Type: application/json
-Body: { "text": "response text", "model_id": "eleven_multilingual_v2" }
-Response: audio/mpeg (stream)
-```
-
-## Settings (User Configurable)
-- OpenClaw URL (e.g. https://openclaw.hostname.gbnet.cloud)
-- OpenClaw Gateway Token
-- OpenAI API Key (for Whisper)
-- ElevenLabs API Key
-- Voice Selection (auto-fetch from ElevenLabs API, picker with preview)
-- Mode: Push-to-talk / Hands-free
-
-## UX Flow
-
-### Push-to-talk
-1. Open app → see chat history
-2. Hold mic button → recording starts, waveform shows
-3. Release → "Thinking..." indicator
-4. STT transcribes → text appears in chat
-5. OpenClaw processes → response text appears
-6. TTS plays audio → speaker icon animates
-7. Ready for next input
-
-### Hands-free
-1. Toggle hands-free mode ON
-2. App listens continuously
-3. VAD detects speech → starts recording
-4. Silence detected → auto sends
-5. Same flow as above
-6. After TTS finishes → auto listen again
-
-## Cost Estimate (per conversation)
-- STT: ~$0.006/min of speech
+## Cost Estimate (per exchange)
+- STT: ~$0.003/min (gpt-4o-mini-transcribe, half of whisper-1)
 - LLM: Same as Telegram chat (varies by model)
-- TTS: ~$0.30/1000 chars (~$0.015 per response)
-- **Total: ~$0.02-0.05 per exchange** (way cheaper than ElevenLabs agent)
+- TTS: ~$0.015 per response (~50 chars avg)
+- **Total: ~$0.02-0.04 per exchange**
 
-## For OpenClaw VPS Customers
-ClawTalk works with any OpenClaw VPS:
-1. Install ClawTalk from App Store (future)
-2. Enter OpenClaw URL + token (from `setup-api`)
-3. Enter own OpenAI + ElevenLabs keys
-4. Start talking!
+## Git
+- **Repo:** https://github.com/LowKey88/ClawTalk
+- **Collaborator:** botopus-bot
+- **Local clone:** /tmp/ClawTalk/
 
-## Timeline
-- **Week 1:** MVP - push-to-talk, STT, chat completions, TTS
-- **Week 2:** Polish UI, hands-free mode, settings
-- **Week 3:** Testing, vision mode (optional), beta
+## Changelog
+- 2026-02-17: v1.0 complete - full voice loop, VAD, streaming, app icon
+  - Commits: voice fix, session routing, VAD, hallucination filter, STT upgrade, streaming, skip button, auto-scroll, app icon
 
 *Created: 2026-02-17*
+*Last updated: 2026-02-17*
