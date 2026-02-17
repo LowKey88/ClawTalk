@@ -140,7 +140,8 @@ class AudioRecorder: NSObject {
         do {
             silentPlayer = try AVAudioPlayer(data: data)
             silentPlayer?.numberOfLoops = -1
-            silentPlayer?.volume = 0.01
+            silentPlayer?.volume = 0.05
+            silentPlayer?.prepareToPlay()
             silentPlayer?.play()
             print("Silent audio keepalive started")
         } catch {
