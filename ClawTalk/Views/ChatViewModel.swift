@@ -269,7 +269,7 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
                     self.stopSpeakingTimer()
                     if resumeListening && settings.isHandsFree {
                         // Brief ignore period to avoid picking up TTS echo
-                        self.recorder.setIgnorePeriod(1.2)
+                        self.recorder.setIgnorePeriod(1.5)
                         self.startHandsFree(settings: settings)
                     } else {
                         self.state = .idle
