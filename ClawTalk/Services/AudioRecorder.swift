@@ -14,7 +14,7 @@ class AudioRecorder: NSObject {
     
     // VAD settings
     private let speechThreshold: Float = -25.0   // dB threshold for speech
-    private let silenceTimeout: TimeInterval = 1.2 // seconds of silence to end
+    private let silenceTimeout: TimeInterval = 1.5 // seconds of silence to end
     private let minSpeechDuration: TimeInterval = 0.3 // minimum speech to count
     
     private var audioRecorder: AVAudioRecorder?
