@@ -48,9 +48,8 @@ class AppSettings {
     }
     
     // 0 = system, 1 = light, 2 = dark
-    var appearanceMode: Int {
-        get { UserDefaults.standard.integer(forKey: "appearanceMode") }
-        set { UserDefaults.standard.set(newValue, forKey: "appearanceMode") }
+    var appearanceMode: Int = UserDefaults.standard.integer(forKey: "appearanceMode") {
+        didSet { UserDefaults.standard.set(appearanceMode, forKey: "appearanceMode") }
     }
     
     var colorScheme: ColorScheme? {
