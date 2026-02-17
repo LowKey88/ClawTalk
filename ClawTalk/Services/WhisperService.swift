@@ -42,7 +42,45 @@ class WhisperService {
         }
         
         let result = try JSONDecoder().decode(WhisperResponse.self, from: data)
-        return result.text
+        let text = result.text
+        
+        // Filter Whisper hallucinations (random text from silence/noise)
+        if Self.isHallucination(text) {
+            return ""
+        }
+        
+        return text
+    }
+    
+    /// Detect common Whisper hallucination patterns
+    private static func isHallucination(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Too short
+        if trimmed.count < 2 { return true }
+        
+        // Common hallucination phrases
+        let hallucinations = [
+            "请不吝点赞", "订阅", "转发", "小明星", "大跟班",
+            "Thank you for watching", "Thanks for watching",
+            "Please subscribe", "Like and subscribe",
+            "Subtitles by", "Amara.org", "MosoSub",
+            "ご視聴ありがとうございました", "字幕",
+            "你", "您", "谢谢", "感谢",
+        ]
+        
+        for phrase in hallucinations {
+            if trimmed.contains(phrase) { return true }
+        }
+        
+        // Mostly non-Latin when user likely speaks English/Malay
+        let latinCount = trimmed.unicodeScalars.filter { $0.isASCII || ($0.value >= 0x00C0 && $0.value <= 0x024F) }.count
+        let totalCount = trimmed.unicodeScalars.count
+        if totalCount > 5 && Double(latinCount) / Double(totalCount) < 0.3 {
+            return true
+        }
+        
+        return false
     }
 }
 
