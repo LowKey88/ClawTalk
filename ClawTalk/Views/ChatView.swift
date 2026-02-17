@@ -136,9 +136,46 @@ struct ChatView: View {
                 .padding(.top, 8)
                 .background(Color(.systemBackground))
             }
-            .navigationTitle(settings.activeProfile.map { "\($0.emoji) \($0.name)" } ?? "ClawTalk")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Menu {
+                        ForEach(settings.profiles) { profile in
+                            Button(action: {
+                                settings.setActiveProfile(profile.id)
+                                viewModel.clearChat()
+                            }) {
+                                HStack {
+                                    Text("\(profile.emoji) \(profile.name)")
+                                    if profile.id == settings.activeProfileID {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        Button(action: { showSettings = true }) {
+                            Label("Manage Profiles", systemImage: "person.2.fill")
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            if let profile = settings.activeProfile {
+                                Text(profile.emoji)
+                                Text(profile.name)
+                                    .fontWeight(.semibold)
+                            } else {
+                                Text("ClawTalk")
+                                    .fontWeight(.semibold)
+                            }
+                            Image(systemName: "chevron.down")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                        .foregroundColor(.primary)
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: { showSettings = true }) {
                         Image(systemName: "gearshape.fill")
