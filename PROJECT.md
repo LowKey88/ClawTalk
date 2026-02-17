@@ -4,8 +4,8 @@
 Native iOS app for realtime voice conversations with your OpenClaw agent.
 Lightweight alternative to ElevenLabs Conversational AI - uses STT + OpenClaw API + TTS pipeline.
 
-## Status: v1.0 COMPLETE ✅
-Built and deployed to iPhone in ~2 hours (2026-02-17).
+## Status: v1.1 ✅
+Built v1.0 in ~2 hours (2026-02-17). Polished to v1.1 same night.
 
 ## Architecture
 ```
@@ -27,29 +27,57 @@ iPhone (ClawTalk App)
     |   Streaming text response (word by word)
     |       |
     |       v
-    |   TTS (ElevenLabs, eleven_turbo_v2_5)
-    |       |-- Voice: Botopus (U7vsLCpbWl9Lt8M1Gjtk)
+    |   Chunked TTS (ElevenLabs, eleven_turbo_v2_5)
+    |       |-- Voice: per-profile (default Botopus U7vsLCpbWl9Lt8M1Gjtk)
+    |       |-- TTSChunkQueue actor (serialized, in-order)
     |       v
-    |-- [Speaker] Play audio (skip button available)
+    |-- [Speaker] Play audio queue (skip/stop available)
 ```
 
 ## Features Completed
 
 ### v1.0 (2026-02-17) ✅
 - [x] Push-to-talk voice chat
-- [x] Hands-free VAD mode (auto-detect speech, 1.5s silence to send)
+- [x] Hands-free VAD mode (auto-detect speech, silence to send)
 - [x] OpenClaw API connection (configurable URL + token)
 - [x] Session routing to main session (shared with Telegram)
-- [x] Streaming text response (SSE, word-by-word like ChatGPT)
+- [x] Streaming text response (SSE, word-by-word)
 - [x] STT: gpt-4o-mini-transcribe (half cost, better accuracy than whisper-1)
-- [x] TTS: ElevenLabs eleven_turbo_v2_5 with Botopus voice
+- [x] TTS: ElevenLabs eleven_turbo_v2_5
 - [x] Whisper hallucination filter (Chinese spam, subtitle artifacts)
-- [x] Manglish prompt hint (no auto-translation)
-- [x] Chat history with auto-scroll (follows streaming)
-- [x] Skip button to cancel TTS playback
-- [x] Audio waveform visualization
+- [x] Chat history with auto-scroll
+- [x] Skip button (integrated into mic button, orange forward icon)
+- [x] Stop button (cancel any active operation)
+- [x] Audio waveform visualization (red=recording, orange=speaking)
 - [x] Settings screen (API keys, server URL, voice selection)
 - [x] App icon (purple octopus in speech bubble)
+- [x] Multi-profile support (per-profile: name/emoji/URL/token/voice)
+- [x] Global API keys (OpenAI + ElevenLabs shared across profiles)
+- [x] Per-profile chat history
+- [x] Profile activation + switching (smooth transitions)
+- [x] Echo cancellation (word overlap detection >40% = discard)
+- [x] Force-send button (tap during recording to submit immediately)
+- [x] Long press to copy messages
+- [x] New Conversation button (with confirmation dialog)
+- [x] Meta Ray-Ban Bluetooth support (HFP/A2DP mic+speaker routing)
+
+### v1.1 (2026-02-17 night) ✅
+- [x] **Chunked TTS serialization** - TTSChunkQueue actor ensures audio plays in correct order
+- [x] **Audio session optimization** - prepareAudioSession() called once, not per-chunk
+- [x] **Background audio playback** - continues playing when app minimized
+- [x] **Auto-restart listening on foreground** - hands-free resumes when returning to app
+- [x] **VAD silence timeout tuned** - 1.5s (industry standard sweet spot)
+- [x] **Connection test fix** - HEAD request to /v1/chat/completions (fast, shows latency in ms)
+- [x] **Auto-check connection** - tests on Settings open automatically
+- [x] **Theme toggle fix** - stored property for @Observable + UIKit window.overrideUserInterfaceStyle
+- [x] **NO_REPLY filter** - discards silent responses, removes empty message bubble
+- [x] **Custom header** - replaced iOS toolbar (circle backgrounds) with custom HStack
+- [x] **Empty state** - profile emoji + "Tap the mic to start talking"
+- [x] **Date separators** - Today/Yesterday/weekday headers between messages
+- [x] **Green dot indicator** - connection status next to profile name
+- [x] **Modern wave dots** - sine wave animation with state colors + tinted bubble
+- [x] **State colors** - green=listening, red=recording, purple=transcribing, blue=thinking, cyan=streaming, orange=speaking
+- [x] **Instant scroll on state change** - no animation overshoot during transitions
 
 ### v2.0 (Planned)
 - [ ] WebSocket protocol (replace REST chat completions)
@@ -57,7 +85,7 @@ iPhone (ClawTalk App)
   - No session busy/timeout conflicts
   - Real-time events from Gateway
 - [ ] On-device STT (Apple Speech Recognition) - offline capable
-- [ ] Background audio (keep listening while app backgrounded)
+- [ ] Background mic recording (VOIP entitlement - complex)
 
 ### v3.0 (Future)
 - [ ] Vision mode (camera snap + send as image to OpenClaw)
@@ -75,7 +103,7 @@ iPhone (ClawTalk App)
 | **STT** | gpt-4o-mini-transcribe | ~$0.003/min |
 | **LLM** | OpenClaw API (SSE streaming) | Normal token usage |
 | **TTS** | ElevenLabs eleven_turbo_v2_5 | ~$0.30/1000 chars |
-| **Voice** | Botopus (U7vsLCpbWl9Lt8M1Gjtk) | - |
+| **Voice** | Per-profile (default: Botopus U7vsLCpbWl9Lt8M1Gjtk) | - |
 | **VAD** | Audio level monitoring (-25dB threshold) | Free (on-device) |
 
 ## Project Structure
@@ -84,48 +112,85 @@ ClawTalk/
 ├── ClawTalk.xcodeproj
 ├── ClawTalk/
 │   ├── App/
-│   │   ├── ClawTalkApp.swift          # App entry
+│   │   ├── ClawTalkApp.swift          # App entry, audio session, appearance
 │   │   └── ContentView.swift          # Main UI router
 │   ├── Views/
-│   │   ├── ChatView.swift             # Conversation + controls
-│   │   ├── ChatViewModel.swift        # State management + pipeline
+│   │   ├── ChatView.swift             # Conversation + custom header + controls
+│   │   ├── ChatViewModel.swift        # State management + voice pipeline
 │   │   ├── VoiceButton.swift          # Push-to-talk button
 │   │   ├── WaveformView.swift         # Audio visualization
-│   │   └── SettingsView.swift         # Config screen
+│   │   └── SettingsView.swift         # Config, profiles, connection test
 │   ├── Services/
-│   │   ├── AudioRecorder.swift        # Mic capture + VAD
-│   │   ├── AudioPlayer.swift          # TTS playback
+│   │   ├── AudioRecorder.swift        # Mic capture + VAD + Bluetooth
+│   │   ├── AudioPlayer.swift          # TTS playback + queue mode
 │   │   ├── WhisperService.swift       # STT API + hallucination filter
 │   │   ├── OpenClawService.swift      # Chat completions (REST + SSE)
-│   │   └── ElevenLabsService.swift    # TTS API
+│   │   └── ElevenLabsService.swift    # TTS API + voice listing
 │   ├── Models/
-│   │   ├── Message.swift              # Chat message model
-│   │   └── Settings.swift             # App settings (@Observable)
+│   │   ├── Message.swift              # ChatMessage model (Codable)
+│   │   └── Settings.swift             # AppSettings + BotProfile (@Observable)
 │   └── Assets.xcassets/
 │       └── AppIcon.appiconset/        # Purple octopus icon
-└── README.md
+├── PROJECT.md                          # This file
+└── README.md                           # Public readme
 ```
 
-## API Configuration
-- **Server:** `https://<your-openclaw-url>` (your OpenClaw instance)
-- **Session Key:** `agent:main:main` (shares context with other channels)
-- **Model:** `openclaw:main`
-- **Streaming:** SSE (`stream: true`)
+## Key Implementation Details
 
-## VAD Settings
-- Speech threshold: -25 dB
-- Silence timeout: 1.5 seconds
-- Min speech duration: 0.5 seconds
-- Auto-resume listening after TTS playback
+### Chunked TTS Pipeline
+- Text split on punctuation (`.!?,;:-\n`), first chunk min 5 chars, force at 120 chars
+- `TTSChunkQueue` actor serializes ElevenLabs API calls (prevents out-of-order playback)
+- `AudioPlayer` queue mode: `startQueue()` → `enqueue()` → `finishQueue()`
+- Audio session prepared once before queue starts (no per-chunk setup glitches)
+
+### VAD (Voice Activity Detection)
+- Threshold: -25dB (best balance for normal speech)
+- Silence timeout: 1.5s
+- Min speech duration: 0.5s
+- Echo prevention: 1.2s ignore period after TTS + word overlap detection (>40% = discard)
+- Bluetooth mic: `preferBluetoothMic()` called before each recording start
+
+### State Machine
+```
+idle → listening → recording → transcribing → thinking → streaming → speaking → idle
+                                                                          ↓
+                                                              (hands-free: → listening)
+```
+
+### Theme System
+- Uses UIKit `window.overrideUserInterfaceStyle` (SwiftUI `preferredColorScheme(nil)` unreliable)
+- Stored property with `didSet` sync to UserDefaults (not computed, for @Observable tracking)
+
+### Connection Status
+- Green/gray dot in header, auto-checked on app launch + profile switch
+- HEAD request to `/v1/chat/completions` with 5s timeout
+- Settings page: auto-check + manual test with latency display (ms)
+
+### Silent Response Filter
+- NO_REPLY and HEARTBEAT_OK responses auto-removed from chat
+- Empty assistant message bubbles hidden during thinking state
 
 ## Known Limitations
-- **Session conflict:** When main session is busy (e.g., generating images), ClawTalk may timeout. Rare in normal use.
-- **No cross-channel visibility:** ClawTalk messages not visible in Telegram and vice versa (fix: v2 WebSocket)
-- **STT accuracy:** gpt-4o-mini-transcribe occasionally misheard words (e.g., "GB" -> "TV"), but LLM compensates with context
-- **Whisper hallucination:** Filtered but not 100% - silence/noise can occasionally trigger false transcription
+- **Background mic** - iOS kills microphone in background (privacy). Auto-restarts on foreground return.
+- **Session conflict** - When main session busy, ClawTalk may timeout (rare in normal use)
+- **No cross-channel visibility** - ClawTalk messages not visible in Telegram (fix: v2 WebSocket)
+- **Toolbar circles** - iOS 16+ forces circle backgrounds; worked around with custom header
+
+## Known Bugs Fixed
+- Chunked TTS out-of-order (concurrent API calls) → serialized with actor
+- Audio session glitch between chunks → prepare once
+- Theme not updating (Light→System stuck) → UIKit window override
+- Test Connection 404 → HEAD request to correct endpoint
+- Empty gray bubble during thinking → hide when content empty
+- Status bubble "drop down" → instant scroll on state change
+- NO_REPLY showing as message → filter + remove
+
+## Tested Devices
+- iPhone (Syam's) - confirmed working
+- Meta Ray-Ban glasses - Bluetooth mic+speaker confirmed, works from different rooms
 
 ## Cost Estimate (per exchange)
-- STT: ~$0.003/min (gpt-4o-mini-transcribe, half of whisper-1)
+- STT: ~$0.003/min (gpt-4o-mini-transcribe)
 - LLM: Same as Telegram chat (varies by model)
 - TTS: ~$0.015 per response (~50 chars avg)
 - **Total: ~$0.02-0.04 per exchange**
@@ -136,8 +201,8 @@ ClawTalk/
 - **Local clone:** /tmp/ClawTalk/
 
 ## Changelog
-- 2026-02-17: v1.0 complete - full voice loop, VAD, streaming, app icon
-  - Commits: voice fix, session routing, VAD, hallucination filter, STT upgrade, streaming, skip button, auto-scroll, app icon
+- 2026-02-17 (day): v1.0 - full voice loop, VAD, streaming, profiles, echo cancellation, app icon (~30 commits)
+- 2026-02-17 (night): v1.1 - chunked TTS fix, background audio, theme fix, UI polish, wave dots (~15 commits, f5e9f59→ff69b31)
 
 *Created: 2026-02-17*
-*Last updated: 2026-02-17*
+*Last updated: 2026-02-18*
