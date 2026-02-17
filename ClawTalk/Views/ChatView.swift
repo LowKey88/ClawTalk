@@ -102,6 +102,7 @@ struct ChatView: View {
                                         .padding(.vertical, 8)
                                 }
                                 
+                                if !message.content.isEmpty {
                                 MessageBubble(
                                     message: message,
                                     botEmoji: settings.activeProfile?.emoji ?? "🤖",
@@ -120,6 +121,7 @@ struct ChatView: View {
                                         }
                                     }
                                 }
+                                } // if !message.content.isEmpty
                             }
                             
                             if viewModel.state != .idle {
