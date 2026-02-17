@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @EnvironmentObject var settings: AppSettings
+    @Environment(AppSettings.self) var settings
     @Environment(\.dismiss) var dismiss
     @State private var voices: [Voice] = []
     @State private var isLoadingVoices = false
@@ -9,6 +9,8 @@ struct SettingsView: View {
     @State private var showAPIKeys = false
     
     var body: some View {
+        @Bindable var settings = settings
+        
         NavigationStack {
             Form {
                 // OpenClaw Section
@@ -168,14 +170,10 @@ struct SettingsView: View {
             do {
                 let service = ElevenLabsService(apiKey: settings.elevenlabsAPIKey)
                 let fetchedVoices = try await service.fetchVoices()
-                await MainActor.run {
-                    voices = fetchedVoices
-                    isLoadingVoices = false
-                }
+                voices = fetchedVoices
+                isLoadingVoices = false
             } catch {
-                await MainActor.run {
-                    isLoadingVoices = false
-                }
+                isLoadingVoices = false
             }
         }
     }
@@ -183,6 +181,6 @@ struct SettingsView: View {
 
 #Preview {
     SettingsView()
-        .environmentObject(AppSettings())
+        .environment(AppSettings())
         .preferredColorScheme(.dark)
 }

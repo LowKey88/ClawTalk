@@ -9,21 +9,15 @@ enum ChatState {
     case speaking
 }
 
+@Observable
 @MainActor
-class ChatViewModel: ObservableObject {
-    @Published var messages: [ChatMessage] = []
-    @Published var state: ChatState = .idle
-    @Published var audioLevel: Float = 0.0
+class ChatViewModel {
+    var messages: [ChatMessage] = []
+    var state: ChatState = .idle
+    var audioLevel: Float = 0.0
     
     private let recorder = AudioRecorder()
     private let player = AudioPlayer()
-    private var cancellable: Any?
-    
-    init() {
-        // Observe audio level from recorder
-        cancellable = recorder.$audioLevel
-            .assign(to: &$audioLevel)
-    }
     
     func startRecording() {
         recorder.startRecording()
@@ -39,6 +33,10 @@ class ChatViewModel: ObservableObject {
         Task {
             await processAudio(audioURL: audioURL, settings: settings)
         }
+    }
+    
+    func updateAudioLevel() {
+        audioLevel = recorder.audioLevel
     }
     
     private func processAudio(audioURL: URL, settings: AppSettings) async {

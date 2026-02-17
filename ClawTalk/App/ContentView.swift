@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ContentView: View {
-    @EnvironmentObject var settings: AppSettings
+    @Environment(AppSettings.self) var settings
     @State private var showSettings = false
     
     var body: some View {
@@ -55,6 +55,6 @@ struct WelcomeView: View {
 
 #Preview {
     ContentView()
-        .environmentObject(AppSettings())
+        .environment(AppSettings())
         .preferredColorScheme(.dark)
 }

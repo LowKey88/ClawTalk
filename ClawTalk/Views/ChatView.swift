@@ -1,8 +1,8 @@
 import SwiftUI
 
 struct ChatView: View {
-    @EnvironmentObject var settings: AppSettings
-    @StateObject private var viewModel = ChatViewModel()
+    @Environment(AppSettings.self) var settings
+    @State private var viewModel = ChatViewModel()
     @State private var showSettings = false
     
     var body: some View {
@@ -70,7 +70,7 @@ struct ChatView: View {
                         Text(settings.isHandsFree ? "Hands-free" : "Push to talk")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        Toggle("", isOn: $settings.isHandsFree)
+                        Toggle("", isOn: Bindable(settings).isHandsFree)
                             .labelsHidden()
                             .scaleEffect(0.8)
                     }
@@ -157,6 +157,6 @@ struct StatusBubble: View {
 
 #Preview {
     ChatView()
-        .environmentObject(AppSettings())
+        .environment(AppSettings())
         .preferredColorScheme(.dark)
 }
