@@ -185,6 +185,11 @@ struct SettingsView: View {
             .sheet(isPresented: $showAddProfile) {
                 ProfileEditorView(profile: BotProfile(), isNew: true)
             }
+            .onAppear {
+                if settings.isConfigured {
+                    checkConnection()
+                }
+            }
             .sheet(item: $editingProfile) { profile in
                 ProfileEditorView(profile: profile, isNew: false)
             }
@@ -364,7 +369,7 @@ extension SettingsView {
         guard let profile = settings.activeProfile else { return }
         connectionStatus = .checking
         
-        // Test connection by sending a minimal chat completion request
+        // Test connection with a lightweight HEAD request to the API endpoint
         let baseURL = profile.openclawURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let urlString = "\(baseURL)/v1/chat/completions"
         
@@ -374,25 +379,23 @@ extension SettingsView {
         }
         
         var request = URLRequest(url: url)
-        request.httpMethod = "POST"
+        request.httpMethod = "HEAD"
         request.setValue("Bearer \(profile.gatewayToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 15
-        
-        let body: [String: Any] = [
-            "model": "openclaw:main",
-            "messages": [["role": "user", "content": "ping"]],
-            "max_tokens": 1
-        ]
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        request.timeoutInterval = 8
         
         Task {
             do {
                 let (_, response) = try await URLSession.shared.data(for: request)
-                if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
-                    connectionStatus = .connected
-                } else if let http = response as? HTTPURLResponse {
-                    connectionStatus = .failed("HTTP \(http.statusCode)")
+                if let http = response as? HTTPURLResponse {
+                    // Any response means server is reachable and auth is accepted
+                    // 405 = Method Not Allowed (HEAD not supported but server alive)
+                    if (200...499).contains(http.statusCode) && http.statusCode != 401 && http.statusCode != 403 {
+                        connectionStatus = .connected
+                    } else if http.statusCode == 401 || http.statusCode == 403 {
+                        connectionStatus = .failed("Auth failed")
+                    } else {
+                        connectionStatus = .failed("HTTP \(http.statusCode)")
+                    }
                 } else {
                     connectionStatus = .failed("Unknown error")
                 }
