@@ -308,6 +308,7 @@ struct StatusBubble: View {
                     .symbolEffect(.pulse)
                 Text(text)
                     .font(.subheadline)
+                TypingDotsView()
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
@@ -315,6 +316,27 @@ struct StatusBubble: View {
             .cornerRadius(18)
             
             Spacer()
+        }
+    }
+}
+
+struct TypingDotsView: View {
+    @State private var activeDot = 0
+    
+    let timer = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
+    
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(0..<3) { index in
+                Circle()
+                    .fill(Color.primary.opacity(index == activeDot ? 1.0 : 0.3))
+                    .frame(width: 6, height: 6)
+                    .scaleEffect(index == activeDot ? 1.3 : 1.0)
+                    .animation(.easeInOut(duration: 0.3), value: activeDot)
+            }
+        }
+        .onReceive(timer) { _ in
+            activeDot = (activeDot + 1) % 3
         }
     }
 }
