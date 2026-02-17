@@ -126,6 +126,16 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
         state = .idle
     }
     
+    /// Stop everything - cancel any active operation
+    func stopAll() {
+        player.stop()
+        stopSpeakingTimer()
+        stopLevelTimer()
+        pendingSettings = nil
+        recorder.stopListening()
+        state = .idle
+    }
+    
     /// Force-end current recording and process immediately (hands-free send button)
     func forceEndRecording(settings: AppSettings) {
         stopLevelTimer()

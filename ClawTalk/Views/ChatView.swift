@@ -79,15 +79,14 @@ struct ChatView: View {
                             HandsFreeButton(
                                 state: viewModel.state,
                                 onTap: {
-                                    if viewModel.state == .speaking || viewModel.state == .streaming {
-                                        viewModel.skipSpeaking(settings: settings)
-                                    } else if viewModel.state == .recording {
-                                        // Force-send recording immediately (don't wait for silence)
-                                        viewModel.forceEndRecording(settings: settings)
-                                    } else if viewModel.state == .listening {
-                                        viewModel.stopHandsFree()
-                                    } else if viewModel.state == .idle {
+                                    if viewModel.state == .idle {
                                         viewModel.startHandsFree(settings: settings)
+                                    } else if viewModel.state == .recording {
+                                        // Force-send recording immediately
+                                        viewModel.forceEndRecording(settings: settings)
+                                    } else {
+                                        // Any other state: stop everything
+                                        viewModel.stopAll()
                                     }
                                 }
                             )
@@ -257,15 +256,13 @@ struct HandsFreeButton: View {
         switch state {
         case .listening: return "ear.fill"
         case .recording: return "arrow.up.circle.fill"
-        case .transcribing: return "text.bubble"
-        case .thinking: return "brain"
-        case .streaming, .speaking: return "forward.fill"
         case .idle: return "mic.fill"
+        default: return "stop.fill"  // All other states: stop button
         }
     }
     
     private var isDisabled: Bool {
-        state == .transcribing || state == .thinking
+        false  // Always tappable
     }
 }
 
