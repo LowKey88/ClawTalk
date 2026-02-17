@@ -52,15 +52,11 @@ class AppSettings {
         didSet { UserDefaults.standard.set(appearanceMode, forKey: "appearanceMode") }
     }
     
-    var colorScheme: ColorScheme? {
+    var userInterfaceStyle: UIUserInterfaceStyle {
         switch appearanceMode {
         case 1: return .light
         case 2: return .dark
-        default:
-            // Explicitly return system's current scheme instead of nil
-            // nil doesn't reliably reset after a view-level override
-            let style = UITraitCollection.current.userInterfaceStyle
-            return style == .dark ? .dark : .light
+        default: return .unspecified  // follow system
         }
     }
     
