@@ -9,6 +9,9 @@ struct ClawTalkApp: App {
             ContentView()
                 .environment(settings)
                 .preferredColorScheme(.dark)
+                .onAppear {
+                    settings.migrateIfNeeded()
+                }
         }
     }
 }

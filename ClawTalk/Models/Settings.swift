@@ -1,16 +1,39 @@
 import Foundation
 import SwiftUI
 
+// MARK: - Bot Profile
+
+struct BotProfile: Identifiable, Codable, Hashable {
+    var id: UUID
+    var name: String        // e.g. "Botopus", "Moltopus"
+    var emoji: String       // e.g. "🐙", "🦀"
+    var openclawURL: String
+    var gatewayToken: String
+    var voiceID: String
+    var voiceName: String
+    
+    init(id: UUID = UUID(), name: String = "", emoji: String = "🤖", openclawURL: String = "", gatewayToken: String = "", voiceID: String = "", voiceName: String = "Default") {
+        self.id = id
+        self.name = name
+        self.emoji = emoji
+        self.openclawURL = openclawURL
+        self.gatewayToken = gatewayToken
+        self.voiceID = voiceID
+        self.voiceName = voiceName
+    }
+    
+    var isConfigured: Bool {
+        !openclawURL.isEmpty && !gatewayToken.isEmpty && !name.isEmpty
+    }
+}
+
+// MARK: - App Settings
+
 @Observable
 class AppSettings {
-    var openclawURL: String {
-        get { UserDefaults.standard.string(forKey: "openclawURL") ?? "" }
-        set { UserDefaults.standard.set(newValue, forKey: "openclawURL") }
-    }
-    var gatewayToken: String {
-        get { UserDefaults.standard.string(forKey: "gatewayToken") ?? "" }
-        set { UserDefaults.standard.set(newValue, forKey: "gatewayToken") }
-    }
+    
+    // MARK: Global keys (shared across profiles)
+    
     var openaiAPIKey: String {
         get { UserDefaults.standard.string(forKey: "openaiAPIKey") ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: "openaiAPIKey") }
@@ -19,23 +42,108 @@ class AppSettings {
         get { UserDefaults.standard.string(forKey: "elevenlabsAPIKey") ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: "elevenlabsAPIKey") }
     }
-    var selectedVoiceID: String {
-        get { UserDefaults.standard.string(forKey: "selectedVoiceID") ?? "" }
-        set { UserDefaults.standard.set(newValue, forKey: "selectedVoiceID") }
-    }
-    var selectedVoiceName: String {
-        get { UserDefaults.standard.string(forKey: "selectedVoiceName") ?? "Default" }
-        set { UserDefaults.standard.set(newValue, forKey: "selectedVoiceName") }
-    }
     var isHandsFree: Bool {
         get { UserDefaults.standard.bool(forKey: "isHandsFree") }
         set { UserDefaults.standard.set(newValue, forKey: "isHandsFree") }
     }
     
+    // MARK: Profiles
+    
+    var profiles: [BotProfile] {
+        get {
+            guard let data = UserDefaults.standard.data(forKey: "botProfiles"),
+                  let decoded = try? JSONDecoder().decode([BotProfile].self, from: data) else {
+                return []
+            }
+            return decoded
+        }
+        set {
+            if let encoded = try? JSONEncoder().encode(newValue) {
+                UserDefaults.standard.set(encoded, forKey: "botProfiles")
+            }
+        }
+    }
+    
+    var activeProfileID: UUID? {
+        get {
+            guard let str = UserDefaults.standard.string(forKey: "activeProfileID"),
+                  let uuid = UUID(uuidString: str) else { return nil }
+            return uuid
+        }
+        set {
+            UserDefaults.standard.set(newValue?.uuidString, forKey: "activeProfileID")
+        }
+    }
+    
+    var activeProfile: BotProfile? {
+        profiles.first(where: { $0.id == activeProfileID })
+    }
+    
+    // MARK: Convenience (active profile properties)
+    
+    var openclawURL: String { activeProfile?.openclawURL ?? "" }
+    var gatewayToken: String { activeProfile?.gatewayToken ?? "" }
+    var selectedVoiceID: String { activeProfile?.voiceID ?? "" }
+    var selectedVoiceName: String { activeProfile?.voiceName ?? "Default" }
+    
     var isConfigured: Bool {
-        !openclawURL.isEmpty &&
-        !gatewayToken.isEmpty &&
+        activeProfile?.isConfigured == true &&
         !openaiAPIKey.isEmpty &&
         !elevenlabsAPIKey.isEmpty
+    }
+    
+    // MARK: Profile management
+    
+    func addProfile(_ profile: BotProfile) {
+        var list = profiles
+        list.append(profile)
+        profiles = list
+        if activeProfileID == nil {
+            activeProfileID = profile.id
+        }
+    }
+    
+    func updateProfile(_ profile: BotProfile) {
+        var list = profiles
+        if let idx = list.firstIndex(where: { $0.id == profile.id }) {
+            list[idx] = profile
+            profiles = list
+        }
+    }
+    
+    func deleteProfile(_ id: UUID) {
+        var list = profiles
+        list.removeAll(where: { $0.id == id })
+        profiles = list
+        if activeProfileID == id {
+            activeProfileID = list.first?.id
+        }
+    }
+    
+    func setActiveProfile(_ id: UUID) {
+        activeProfileID = id
+    }
+    
+    // MARK: Migration from old single-profile settings
+    
+    func migrateIfNeeded() {
+        guard profiles.isEmpty else { return }
+        
+        let oldURL = UserDefaults.standard.string(forKey: "openclawURL") ?? ""
+        let oldToken = UserDefaults.standard.string(forKey: "gatewayToken") ?? ""
+        let oldVoiceID = UserDefaults.standard.string(forKey: "selectedVoiceID") ?? ""
+        let oldVoiceName = UserDefaults.standard.string(forKey: "selectedVoiceName") ?? "Default"
+        
+        guard !oldURL.isEmpty else { return }
+        
+        let migrated = BotProfile(
+            name: "My Bot",
+            emoji: "🤖",
+            openclawURL: oldURL,
+            gatewayToken: oldToken,
+            voiceID: oldVoiceID,
+            voiceName: oldVoiceName
+        )
+        addProfile(migrated)
     }
 }

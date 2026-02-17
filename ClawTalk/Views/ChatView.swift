@@ -136,7 +136,7 @@ struct ChatView: View {
                 .padding(.top, 8)
                 .background(Color(.systemBackground))
             }
-            .navigationTitle("ClawTalk")
+            .navigationTitle(settings.activeProfile.map { "\($0.emoji) \($0.name)" } ?? "ClawTalk")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {

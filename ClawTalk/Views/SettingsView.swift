@@ -3,52 +3,72 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AppSettings.self) var settings
     @Environment(\.dismiss) var dismiss
-    @State private var voices: [Voice] = []
-    @State private var isLoadingVoices = false
-    @State private var showToken = false
     @State private var showAPIKeys = false
+    @State private var editingProfile: BotProfile?
+    @State private var showAddProfile = false
     
     var body: some View {
         @Bindable var settings = settings
         
         NavigationStack {
             Form {
-                // OpenClaw Section
+                // Profiles Section
                 Section {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Server URL")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        TextField("https://openclaw.example.com", text: $settings.openclawURL)
-                            .textContentType(.URL)
-                            .autocapitalization(.none)
-                            .keyboardType(.URL)
+                    ForEach(settings.profiles) { profile in
+                        HStack {
+                            Text(profile.emoji)
+                                .font(.title2)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(profile.name)
+                                    .fontWeight(profile.id == settings.activeProfileID ? .bold : .regular)
+                                Text(profile.openclawURL)
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                            }
+                            
+                            Spacer()
+                            
+                            if profile.id == settings.activeProfileID {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            settings.setActiveProfile(profile.id)
+                        }
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                settings.deleteProfile(profile.id)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                            
+                            Button {
+                                editingProfile = profile
+                            } label: {
+                                Label("Edit", systemImage: "pencil")
+                            }
+                            .tint(.blue)
+                        }
                     }
                     
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Gateway Token")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                    Button(action: { showAddProfile = true }) {
                         HStack {
-                            if showToken {
-                                TextField("Token", text: $settings.gatewayToken)
-                                    .autocapitalization(.none)
-                            } else {
-                                SecureField("Token", text: $settings.gatewayToken)
-                            }
-                            Button(action: { showToken.toggle() }) {
-                                Image(systemName: showToken ? "eye.slash" : "eye")
-                                    .foregroundColor(.secondary)
-                            }
+                            Image(systemName: "plus.circle.fill")
+                                .foregroundColor(.green)
+                            Text("Add Profile")
                         }
                     }
                 } header: {
-                    Label("OpenClaw", systemImage: "server.rack")
+                    Label("Bot Profiles", systemImage: "person.2.fill")
                 } footer: {
-                    Text("Get these from running 'setup-api' on your VPS")
+                    Text("Tap to switch, swipe to edit or delete")
                 }
                 
-                // API Keys Section
+                // API Keys Section (global)
                 Section {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("OpenAI API Key")
@@ -80,43 +100,9 @@ struct SettingsView: View {
                     
                     Toggle("Show API Keys", isOn: $showAPIKeys)
                 } header: {
-                    Label("API Keys", systemImage: "key.fill")
+                    Label("API Keys (Shared)", systemImage: "key.fill")
                 } footer: {
-                    Text("Keys are stored locally on your device")
-                }
-                
-                // Voice Section
-                Section {
-                    if voices.isEmpty {
-                        Button(action: { loadVoices() }) {
-                            HStack {
-                                Text("Load Voices")
-                                if isLoadingVoices {
-                                    Spacer()
-                                    ProgressView()
-                                }
-                            }
-                        }
-                        .disabled(settings.elevenlabsAPIKey.isEmpty || isLoadingVoices)
-                    } else {
-                        Picker("Voice", selection: $settings.selectedVoiceID) {
-                            ForEach(voices) { voice in
-                                Text(voice.name)
-                                    .tag(voice.voice_id)
-                            }
-                        }
-                    }
-                    
-                    if !settings.selectedVoiceName.isEmpty {
-                        HStack {
-                            Text("Selected")
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Text(settings.selectedVoiceName)
-                        }
-                    }
-                } header: {
-                    Label("Voice", systemImage: "speaker.wave.2.fill")
+                    Text("These keys are shared across all profiles")
                 }
                 
                 // Mode Section
@@ -132,6 +118,19 @@ struct SettingsView: View {
                 
                 // Status
                 Section {
+                    if let profile = settings.activeProfile {
+                        HStack {
+                            Text("Active")
+                            Spacer()
+                            Text("\(profile.emoji) \(profile.name)")
+                        }
+                        HStack {
+                            Text("Voice")
+                            Spacer()
+                            Text(profile.voiceName)
+                                .foregroundColor(.secondary)
+                        }
+                    }
                     HStack {
                         Text("Status")
                         Spacer()
@@ -154,12 +153,157 @@ struct SettingsView: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .onChange(of: settings.selectedVoiceID) {
-                if let voice = voices.first(where: { $0.voice_id == settings.selectedVoiceID }) {
-                    settings.selectedVoiceName = voice.name
+            .sheet(isPresented: $showAddProfile) {
+                ProfileEditorView(profile: BotProfile(), isNew: true)
+            }
+            .sheet(item: $editingProfile) { profile in
+                ProfileEditorView(profile: profile, isNew: false)
+            }
+        }
+    }
+}
+
+// MARK: - Profile Editor
+
+struct ProfileEditorView: View {
+    @Environment(AppSettings.self) var settings
+    @Environment(\.dismiss) var dismiss
+    @State var profile: BotProfile
+    let isNew: Bool
+    @State private var showToken = false
+    @State private var voices: [Voice] = []
+    @State private var isLoadingVoices = false
+    
+    let emojiOptions = ["🤖", "🐙", "🦀", "🦐", "🦑", "🐟", "🐠", "🦈", "🐳", "🧠", "⚡", "🔮", "🛡️", "🎯"]
+    
+    var body: some View {
+        NavigationStack {
+            Form {
+                // Identity
+                Section {
+                    HStack {
+                        Text("Emoji")
+                        Spacer()
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(emojiOptions, id: \.self) { emoji in
+                                    Text(emoji)
+                                        .font(.title2)
+                                        .padding(6)
+                                        .background(profile.emoji == emoji ? Color.blue.opacity(0.3) : Color.clear)
+                                        .cornerRadius(8)
+                                        .onTapGesture { profile.emoji = emoji }
+                                }
+                            }
+                        }
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Bot Name")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        TextField("e.g. Botopus", text: $profile.name)
+                    }
+                } header: {
+                    Label("Identity", systemImage: "person.fill")
+                }
+                
+                // Connection
+                Section {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Server URL")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        TextField("https://openclaw.example.com", text: $profile.openclawURL)
+                            .textContentType(.URL)
+                            .autocapitalization(.none)
+                            .keyboardType(.URL)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Gateway Token")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        HStack {
+                            if showToken {
+                                TextField("Token", text: $profile.gatewayToken)
+                                    .autocapitalization(.none)
+                            } else {
+                                SecureField("Token", text: $profile.gatewayToken)
+                            }
+                            Button(action: { showToken.toggle() }) {
+                                Image(systemName: showToken ? "eye.slash" : "eye")
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                } header: {
+                    Label("Connection", systemImage: "server.rack")
+                } footer: {
+                    Text("Get these from running 'setup-api' on your VPS")
+                }
+                
+                // Voice
+                Section {
+                    if voices.isEmpty {
+                        Button(action: { loadVoices() }) {
+                            HStack {
+                                Text("Load Voices")
+                                if isLoadingVoices {
+                                    Spacer()
+                                    ProgressView()
+                                }
+                            }
+                        }
+                        .disabled(settings.elevenlabsAPIKey.isEmpty || isLoadingVoices)
+                    } else {
+                        Picker("Voice", selection: $profile.voiceID) {
+                            Text("Default").tag("")
+                            ForEach(voices) { voice in
+                                Text(voice.name).tag(voice.voice_id)
+                            }
+                        }
+                    }
+                    
+                    if !profile.voiceName.isEmpty && profile.voiceName != "Default" {
+                        HStack {
+                            Text("Selected")
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(profile.voiceName)
+                        }
+                    }
+                } header: {
+                    Label("Voice", systemImage: "speaker.wave.2.fill")
+                }
+            }
+            .navigationTitle(isNew ? "New Profile" : "Edit Profile")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Save") { save() }
+                        .fontWeight(.bold)
+                        .disabled(profile.name.isEmpty || profile.openclawURL.isEmpty)
+                }
+            }
+            .onChange(of: profile.voiceID) {
+                if let voice = voices.first(where: { $0.voice_id == profile.voiceID }) {
+                    profile.voiceName = voice.name
                 }
             }
         }
+    }
+    
+    private func save() {
+        if isNew {
+            settings.addProfile(profile)
+        } else {
+            settings.updateProfile(profile)
+        }
+        dismiss()
     }
     
     private func loadVoices() {
