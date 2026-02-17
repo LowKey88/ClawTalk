@@ -47,31 +47,31 @@ class AppSettings {
         set { UserDefaults.standard.set(newValue, forKey: "isHandsFree") }
     }
     
-    // MARK: Profiles
+    // MARK: Profiles (stored properties for SwiftUI observation)
     
-    var profiles: [BotProfile] {
-        get {
-            guard let data = UserDefaults.standard.data(forKey: "botProfiles"),
-                  let decoded = try? JSONDecoder().decode([BotProfile].self, from: data) else {
-                return []
-            }
-            return decoded
-        }
-        set {
-            if let encoded = try? JSONEncoder().encode(newValue) {
+    var profiles: [BotProfile] = [] {
+        didSet {
+            if let encoded = try? JSONEncoder().encode(profiles) {
                 UserDefaults.standard.set(encoded, forKey: "botProfiles")
             }
         }
     }
     
-    var activeProfileID: UUID? {
-        get {
-            guard let str = UserDefaults.standard.string(forKey: "activeProfileID"),
-                  let uuid = UUID(uuidString: str) else { return nil }
-            return uuid
+    var activeProfileID: UUID? = nil {
+        didSet {
+            UserDefaults.standard.set(activeProfileID?.uuidString, forKey: "activeProfileID")
         }
-        set {
-            UserDefaults.standard.set(newValue?.uuidString, forKey: "activeProfileID")
+    }
+    
+    init() {
+        // Load from UserDefaults on init
+        if let data = UserDefaults.standard.data(forKey: "botProfiles"),
+           let decoded = try? JSONDecoder().decode([BotProfile].self, from: data) {
+            self.profiles = decoded
+        }
+        if let str = UserDefaults.standard.string(forKey: "activeProfileID"),
+           let uuid = UUID(uuidString: str) {
+            self.activeProfileID = uuid
         }
     }
     
