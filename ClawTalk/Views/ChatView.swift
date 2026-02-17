@@ -222,7 +222,7 @@ struct HandsFreeButton: View {
                 Image(systemName: iconName)
                     .font(.system(size: 30))
                     .foregroundColor(.white)
-                    .symbolEffect(.pulse, isActive: state == .listening || state == .recording)
+                    .symbolEffect(.pulse, isActive: state == .listening || state == .recording || state == .speaking)
             )
             .shadow(color: buttonColor.opacity(0.4), radius: state == .recording ? 20 : 10)
             .scaleEffect(state == .recording ? 1.1 : 1.0)
