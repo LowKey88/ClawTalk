@@ -10,10 +10,12 @@ struct ClawTalkApp: App {
     
     init() {
         // Remove circle backgrounds from navigation bar buttons
+        let buttonAppearance = UIBarButtonItemAppearance(style: .plain)
+        buttonAppearance.normal.titleTextAttributes = [.foregroundColor: UIColor.label]
         let appearance = UINavigationBarAppearance()
         appearance.configureWithDefaultBackground()
-        appearance.buttonAppearance.normal.backgroundEffect = nil
-        appearance.doneButtonAppearance.normal.backgroundEffect = nil
+        appearance.buttonAppearance = buttonAppearance
+        appearance.doneButtonAppearance = buttonAppearance
         UINavigationBar.appearance().standardAppearance = appearance
         UINavigationBar.appearance().scrollEdgeAppearance = appearance
     }
