@@ -17,7 +17,9 @@ struct ChatView: View {
                                     .id(message.id)
                             }
                             
-                            if viewModel.state == .transcribing {
+                            if viewModel.state == .listening {
+                                StatusBubble(text: "Listening...", icon: "ear.fill")
+                            } else if viewModel.state == .transcribing {
                                 StatusBubble(text: "Transcribing...", icon: "waveform")
                             } else if viewModel.state == .thinking {
                                 StatusBubble(text: "Thinking...", icon: "brain")
@@ -41,7 +43,7 @@ struct ChatView: View {
                 // Bottom controls
                 VStack(spacing: 12) {
                     // Waveform
-                    if viewModel.state == .recording {
+                    if viewModel.state == .recording || viewModel.state == .listening {
                         WaveformView(level: viewModel.audioLevel)
                             .frame(height: 40)
                             .padding(.horizontal)
@@ -51,14 +53,29 @@ struct ChatView: View {
                     HStack {
                         Spacer()
                         
-                        VoiceButton(
-                            isRecording: viewModel.state == .recording,
-                            isDisabled: viewModel.state == .transcribing ||
-                                       viewModel.state == .thinking ||
-                                       viewModel.state == .speaking,
-                            onPress: { viewModel.startRecording() },
-                            onRelease: { viewModel.stopAndProcess(settings: settings) }
-                        )
+                        if settings.isHandsFree {
+                            // Hands-free: tap to start/stop listening
+                            HandsFreeButton(
+                                state: viewModel.state,
+                                onTap: {
+                                    if viewModel.state == .listening || viewModel.state == .recording {
+                                        viewModel.stopHandsFree()
+                                    } else if viewModel.state == .idle {
+                                        viewModel.startHandsFree(settings: settings)
+                                    }
+                                }
+                            )
+                        } else {
+                            // Push-to-talk
+                            VoiceButton(
+                                isRecording: viewModel.state == .recording,
+                                isDisabled: viewModel.state == .transcribing ||
+                                           viewModel.state == .thinking ||
+                                           viewModel.state == .speaking,
+                                onPress: { viewModel.startRecording() },
+                                onRelease: { viewModel.stopAndProcess(settings: settings) }
+                            )
+                        }
                         
                         Spacer()
                     }
@@ -75,6 +92,12 @@ struct ChatView: View {
                             .scaleEffect(0.8)
                     }
                     .padding(.bottom, 8)
+                    .onChange(of: settings.isHandsFree) { _, isHandsFree in
+                        // Stop current mode when toggling
+                        if !isHandsFree {
+                            viewModel.stopHandsFree()
+                        }
+                    }
                 }
                 .padding(.top, 8)
                 .background(Color(.systemBackground))
@@ -100,6 +123,62 @@ struct ChatView: View {
         }
     }
 }
+
+// MARK: - Hands-free button
+
+struct HandsFreeButton: View {
+    let state: ChatState
+    let onTap: () -> Void
+    
+    var body: some View {
+        Circle()
+            .fill(buttonColor)
+            .frame(width: 80, height: 80)
+            .overlay(
+                Image(systemName: iconName)
+                    .font(.system(size: 30))
+                    .foregroundColor(.white)
+                    .symbolEffect(.pulse, isActive: state == .listening)
+                    .symbolEffect(.bounce, value: state == .recording)
+            )
+            .shadow(color: buttonColor.opacity(0.4), radius: state == .recording ? 20 : 10)
+            .scaleEffect(state == .recording ? 1.1 : 1.0)
+            .animation(.spring(response: 0.3), value: state)
+            .opacity(isDisabled ? 0.5 : 1.0)
+            .onTapGesture {
+                guard !isDisabled else { return }
+                let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                impactFeedback.impactOccurred()
+                onTap()
+            }
+    }
+    
+    private var buttonColor: Color {
+        switch state {
+        case .listening: return .green
+        case .recording: return .red
+        case .transcribing, .thinking, .speaking: return .gray
+        case .idle: return .blue
+        }
+    }
+    
+    private var iconName: String {
+        switch state {
+        case .listening: return "ear.fill"
+        case .recording: return "waveform"
+        case .transcribing: return "text.bubble"
+        case .thinking: return "brain"
+        case .speaking: return "speaker.wave.2.fill"
+        case .idle: return "mic.fill"
+        }
+    }
+    
+    private var isDisabled: Bool {
+        state == .transcribing || state == .thinking || state == .speaking
+    }
+}
+
+// MARK: - Message views
 
 struct MessageBubble: View {
     let message: ChatMessage

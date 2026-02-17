@@ -3,7 +3,8 @@ import SwiftUI
 
 enum ChatState {
     case idle
-    case recording
+    case listening    // VAD mode: waiting for speech
+    case recording    // actively recording speech
     case transcribing
     case thinking
     case speaking
@@ -11,13 +12,21 @@ enum ChatState {
 
 @Observable
 @MainActor
-class ChatViewModel {
+class ChatViewModel: NSObject, AudioRecorderDelegate {
     var messages: [ChatMessage] = []
     var state: ChatState = .idle
     var audioLevel: Float = 0.0
     
     private let recorder = AudioRecorder()
     private let player = AudioPlayer()
+    private var pendingSettings: AppSettings?
+    
+    override init() {
+        super.init()
+        recorder.vadDelegate = self
+    }
+    
+    // MARK: - Push-to-talk
     
     func startRecording() {
         recorder.startRecording()
@@ -35,11 +44,43 @@ class ChatViewModel {
         }
     }
     
-    func updateAudioLevel() {
-        audioLevel = recorder.audioLevel
+    // MARK: - Hands-free (VAD)
+    
+    func startHandsFree(settings: AppSettings) {
+        pendingSettings = settings
+        state = .listening
+        recorder.startListening()
     }
     
-    private func processAudio(audioURL: URL, settings: AppSettings) async {
+    func stopHandsFree() {
+        pendingSettings = nil
+        recorder.stopListening()
+        state = .idle
+    }
+    
+    // MARK: - AudioRecorderDelegate (VAD callbacks)
+    
+    nonisolated func audioRecorderDidDetectSpeechStart() {
+        Task { @MainActor in
+            state = .recording
+            let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+            impactFeedback.impactOccurred()
+        }
+    }
+    
+    nonisolated func audioRecorderDidDetectSpeechEnd(audioURL: URL) {
+        Task { @MainActor in
+            guard let settings = pendingSettings else {
+                state = .idle
+                return
+            }
+            await processAudio(audioURL: audioURL, settings: settings, resumeListening: true)
+        }
+    }
+    
+    // MARK: - Audio processing pipeline
+    
+    private func processAudio(audioURL: URL, settings: AppSettings, resumeListening: Bool = false) async {
         // Step 1: STT
         state = .transcribing
         let whisper = WhisperService(apiKey: settings.openaiAPIKey)
@@ -48,7 +89,11 @@ class ChatViewModel {
             let transcript = try await whisper.transcribe(audioURL: audioURL)
             
             guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                state = .idle
+                if resumeListening {
+                    startHandsFree(settings: settings)
+                } else {
+                    state = .idle
+                }
                 return
             }
             
@@ -70,10 +115,15 @@ class ChatViewModel {
             let elevenlabs = ElevenLabsService(apiKey: settings.elevenlabsAPIKey, voiceID: settings.selectedVoiceID)
             let audioData = try await elevenlabs.synthesize(text: response)
             
-            // Play audio
+            // Play audio, then resume listening if hands-free
             player.play(data: audioData) { [weak self] in
                 Task { @MainActor in
-                    self?.state = .idle
+                    guard let self else { return }
+                    if resumeListening && settings.isHandsFree {
+                        self.startHandsFree(settings: settings)
+                    } else {
+                        self.state = .idle
+                    }
                 }
             }
             
@@ -81,8 +131,17 @@ class ChatViewModel {
             print("Error: \(error)")
             let errorMessage = ChatMessage(role: .assistant, content: "Error: \(error.localizedDescription)", timestamp: Date())
             messages.append(errorMessage)
-            state = .idle
+            
+            if resumeListening && settings.isHandsFree {
+                startHandsFree(settings: settings)
+            } else {
+                state = .idle
+            }
         }
+    }
+    
+    func updateAudioLevel() {
+        audioLevel = recorder.audioLevel
     }
     
     func clearChat() {
