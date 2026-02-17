@@ -233,7 +233,7 @@ struct ProfileEditorView: View {
                     }
                     
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Bot Name")
+                        Text("Agent Name")
                             .font(.caption)
                             .foregroundColor(.secondary)
                         TextField("e.g. Botopus", text: $profile.name)
