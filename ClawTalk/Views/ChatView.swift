@@ -12,6 +12,68 @@ struct ChatView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                // Custom header (no circle backgrounds)
+                HStack {
+                    Button(action: { showClearConfirm = true }) {
+                        Image(systemName: "square.and.pencil")
+                            .font(.system(size: 18))
+                            .foregroundColor(.primary)
+                    }
+                    
+                    Spacer()
+                    
+                    Menu {
+                        ForEach(settings.profiles) { profile in
+                            Button(action: {
+                                let impact = UINotificationFeedbackGenerator()
+                                impact.notificationOccurred(.success)
+                                settings.setActiveProfile(profile.id)
+                            }) {
+                                HStack {
+                                    Text("\(profile.emoji) \(profile.name)")
+                                    if profile.id == settings.activeProfileID {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        Button(action: { showSettings = true }) {
+                            Label("Manage Profiles", systemImage: "person.2.fill")
+                        }
+                    } label: {
+                        HStack(spacing: 5) {
+                            if let profile = settings.activeProfile {
+                                Text(profile.emoji)
+                                Text(profile.name)
+                                    .fontWeight(.semibold)
+                                Circle()
+                                    .fill(isConnected ? .green : Color(.systemGray4))
+                                    .frame(width: 7, height: 7)
+                            } else {
+                                Text("ClawTalk")
+                                    .fontWeight(.semibold)
+                            }
+                            Image(systemName: "chevron.down")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                        .foregroundColor(.primary)
+                    }
+                    
+                    Spacer()
+                    
+                    Button(action: { showSettings = true }) {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 18))
+                            .foregroundColor(.primary)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                
                 // Chat messages
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -151,66 +213,7 @@ struct ChatView: View {
                 .padding(.top, 8)
                 .background(Color(.systemBackground))
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Menu {
-                        ForEach(settings.profiles) { profile in
-                            Button(action: {
-                                let impact = UINotificationFeedbackGenerator()
-                                impact.notificationOccurred(.success)
-                                settings.setActiveProfile(profile.id)
-                            }) {
-                                HStack {
-                                    Text("\(profile.emoji) \(profile.name)")
-                                    if profile.id == settings.activeProfileID {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                            }
-                        }
-                        
-                        Divider()
-                        
-                        Button(action: { showSettings = true }) {
-                            Label("Manage Profiles", systemImage: "person.2.fill")
-                        }
-                    } label: {
-                        HStack(spacing: 5) {
-                            if let profile = settings.activeProfile {
-                                Text(profile.emoji)
-                                Text(profile.name)
-                                    .fontWeight(.semibold)
-                                Circle()
-                                    .fill(isConnected ? .green : Color(.systemGray4))
-                                    .frame(width: 7, height: 7)
-                                    .offset(y: 0.5)
-                            } else {
-                                Text("ClawTalk")
-                                    .fontWeight(.semibold)
-                            }
-                            Image(systemName: "chevron.down")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        .foregroundColor(.primary)
-                    }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: { showSettings = true }) {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 18, weight: .regular))
-                    }
-                    .tint(.primary)
-                }
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: { showClearConfirm = true }) {
-                        Image(systemName: "square.and.pencil")
-                            .font(.system(size: 18, weight: .regular))
-                    }
-                    .tint(.primary)
-                }
-            }
+            .navigationBarHidden(true)
             .sheet(isPresented: $showSettings) {
                 SettingsView()
             }
