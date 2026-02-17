@@ -109,16 +109,30 @@ struct ChatView: View {
                                     isCopied: copiedMessageId == message.id
                                 )
                                 .id(message.id)
-                                .onLongPressGesture {
-                                    UIPasteboard.general.string = message.content
-                                    let impact = UINotificationFeedbackGenerator()
-                                    impact.notificationOccurred(.success)
-                                    copiedMessageId = message.id
-                                    // Reset after 1.5s
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                                        if copiedMessageId == message.id {
-                                            copiedMessageId = nil
+                                .onTapGesture {
+                                    if message.isError {
+                                        viewModel.retryLastMessage(settings: settings)
+                                    }
+                                }
+                                .contextMenu {
+                                    Button {
+                                        UIPasteboard.general.string = message.content
+                                        let impact = UINotificationFeedbackGenerator()
+                                        impact.notificationOccurred(.success)
+                                        copiedMessageId = message.id
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                            if copiedMessageId == message.id {
+                                                copiedMessageId = nil
+                                            }
                                         }
+                                    } label: {
+                                        Label("Copy", systemImage: "doc.on.doc")
+                                    }
+                                    
+                                    Button(role: .destructive) {
+                                        viewModel.deleteMessage(id: message.id)
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
                                     }
                                 }
                                 } // if !message.content.isEmpty
@@ -373,6 +387,10 @@ struct MessageBubble: View {
     
     var isUser: Bool { message.role == .user }
     
+    var markdownContent: AttributedString {
+        (try? AttributedString(markdown: message.content, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(message.content)
+    }
+    
     var body: some View {
         HStack {
             if isUser { Spacer() }
@@ -384,12 +402,21 @@ struct MessageBubble: View {
                 }
                 
                 ZStack(alignment: .topTrailing) {
-                    Text(message.content)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(isUser ? Color.blue : Color(.systemGray5))
-                        .foregroundColor(isUser ? .white : .primary)
-                        .cornerRadius(18)
+                    Group {
+                        if isUser {
+                            Text(message.content)
+                        } else {
+                            Text(markdownContent)
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(message.isError ? Color.red.opacity(0.15) : (isUser ? Color.blue : Color(.systemGray5)))
+                    .foregroundColor(message.isError ? .red : (isUser ? .white : .primary))
+                    .cornerRadius(18)
+                    .overlay(
+                        message.isError ? RoundedRectangle(cornerRadius: 18).stroke(Color.red.opacity(0.3), lineWidth: 1) : nil
+                    )
                     
                     if isCopied {
                         Text("Copied!")

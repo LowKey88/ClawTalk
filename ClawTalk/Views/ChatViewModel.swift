@@ -349,7 +349,7 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
             
         } catch {
             print("Error: \(error)")
-            let errorMessage = ChatMessage(role: .assistant, content: "Error: \(error.localizedDescription)", timestamp: Date())
+            let errorMessage = ChatMessage(role: .assistant, content: "⚠️ \(error.localizedDescription)\nTap to retry", timestamp: Date(), isError: true)
             messages.append(errorMessage)
             
             if resumeListening && settings.isHandsFree {
@@ -437,6 +437,107 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
         
         // If >40% of transcript words match spoken text, it's echo
         return ratio > 0.4
+    }
+    
+    func retryLastMessage(settings: AppSettings) {
+        // Remove error message, find last user message, reprocess
+        guard let errorIndex = messages.lastIndex(where: { $0.isError }) else { return }
+        messages.remove(at: errorIndex)
+        
+        guard let lastUserMessage = messages.last(where: { $0.role == .user }) else { return }
+        
+        // Re-send via text (not audio)
+        let transcript = lastUserMessage.content
+        state = .thinking
+        
+        let openclaw = OpenClawService(baseURL: settings.openclawURL, token: settings.gatewayToken)
+        let elevenlabs = ElevenLabsService(apiKey: settings.elevenlabsAPIKey, voiceID: settings.selectedVoiceID)
+        
+        Task {
+            do {
+                let assistantMessage = ChatMessage(role: .assistant, content: "", timestamp: Date())
+                messages.append(assistantMessage)
+                let messageIndex = messages.count - 1
+                
+                var sentenceBuffer = ""
+                var spokenUpTo = 0
+                var firstToken = true
+                var isFirstChunk = true
+                let chunkBreaks: [Character] = [".", "!", "?", "\n", ",", ";", ":", "-"]
+                let maxChunkLength = 120
+                
+                let ttsQueue = TTSChunkQueue(elevenlabs: elevenlabs, player: player)
+                player.prepareAudioSession()
+                player.startQueue { [weak self] in
+                    Task { @MainActor in
+                        self?.stopSpeakingTimer()
+                        self?.state = .idle
+                    }
+                }
+                
+                func speakChunk(_ text: String) {
+                    Task { await ttsQueue.enqueue(text: text) }
+                }
+                
+                let fullResponse = try await openclaw.sendMessageStreaming(transcript) { [weak self] token in
+                    Task { @MainActor in
+                        guard let self else { return }
+                        if firstToken {
+                            self.state = .streaming
+                            firstToken = false
+                        }
+                        self.messages[messageIndex].content += token
+                        sentenceBuffer += token
+                        
+                        let trimmed = sentenceBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let minLength = isFirstChunk ? 5 : 8
+                        let hasBreak = trimmed.last.map { chunkBreaks.contains($0) } ?? false
+                        let shouldChunk = (hasBreak && trimmed.count >= minLength) || trimmed.count >= maxChunkLength
+                        
+                        if shouldChunk && !trimmed.isEmpty {
+                            sentenceBuffer = ""
+                            spokenUpTo = self.messages[messageIndex].content.count
+                            isFirstChunk = false
+                            if self.state != .speaking {
+                                self.state = .speaking
+                                self.startSpeakingTimer()
+                            }
+                            speakChunk(trimmed)
+                        }
+                    }
+                }
+                
+                messages[messageIndex].content = fullResponse
+                
+                let trimmedResponse = fullResponse.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmedResponse.isEmpty || trimmedResponse == "NO_REPLY" || trimmedResponse == "HEARTBEAT_OK" {
+                    messages.remove(at: messageIndex)
+                    player.stop()
+                    state = .idle
+                    return
+                }
+                
+                lastSpokenText = fullResponse.lowercased()
+                let remaining = String(fullResponse.dropFirst(spokenUpTo)).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !remaining.isEmpty {
+                    if state != .speaking {
+                        state = .speaking
+                        startSpeakingTimer()
+                    }
+                    await ttsQueue.enqueue(text: remaining)
+                }
+                player.finishQueue()
+                
+            } catch {
+                let errorMsg = ChatMessage(role: .assistant, content: "⚠️ \(error.localizedDescription)\nTap to retry", timestamp: Date(), isError: true)
+                messages.append(errorMsg)
+                state = .idle
+            }
+        }
+    }
+    
+    func deleteMessage(id: UUID) {
+        messages.removeAll { $0.id == id }
     }
     
     func clearChat() {
