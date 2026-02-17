@@ -1,6 +1,6 @@
 # 🐙 ClawTalk
 
-Voice chat for [OpenClaw](https://openclaw.ai) agents.
+Voice conversations with [OpenClaw](https://openclaw.ai) agents.
 
 Talk to your AI agent in realtime using voice — lightweight alternative to full conversational AI platforms.
 
@@ -12,7 +12,7 @@ Mic → STT → OpenClaw API (streaming) → TTS → Speaker
 
 - **Push-to-talk** or **hands-free** (VAD) mode
 - Streaming text response (word-by-word, like ChatGPT)
-- Conversation history with auto-scrolling chat bubbles
+- Conversation history with auto-scrolling bubbles
 - Skip button to cancel TTS playback
 - Voice selection from ElevenLabs library
 - Whisper hallucination filter

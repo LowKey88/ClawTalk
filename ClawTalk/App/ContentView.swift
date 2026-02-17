@@ -34,7 +34,7 @@ struct WelcomeView: View {
                 .font(.largeTitle)
                 .fontWeight(.bold)
             
-            Text("Voice chat with your OpenClaw agent")
+            Text("Voice conversations with your OpenClaw agent")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
             
@@ -70,7 +70,7 @@ struct NeedKeysView: View {
                 .font(.title2)
                 .fontWeight(.bold)
             
-            Text("Add your OpenAI and ElevenLabs API keys in Settings to start chatting")
+            Text("Add your OpenAI and ElevenLabs API keys in Settings to start a conversation")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
