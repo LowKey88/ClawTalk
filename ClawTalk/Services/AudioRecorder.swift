@@ -37,7 +37,7 @@ class AudioRecorder: NSObject {
     private func setupAudioSession() {
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP])
             try session.setActive(true)
         } catch {
             print("Audio session setup failed: \(error)")

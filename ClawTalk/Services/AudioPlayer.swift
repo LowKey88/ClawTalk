@@ -60,7 +60,7 @@ class AudioPlayer: NSObject, AVAudioPlayerDelegate {
     private func playData(_ data: Data) {
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP])
             
             audioPlayer = try AVAudioPlayer(data: data)
             audioPlayer?.delegate = self
