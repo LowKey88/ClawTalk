@@ -39,16 +39,26 @@ class AudioRecorder: NSObject {
         do {
             try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP])
             try session.setActive(true)
-            
-            // Prefer Bluetooth mic if available (e.g. Meta Ray-Ban)
-            if let bluetoothInput = session.availableInputs?.first(where: { 
-                $0.portType == .bluetoothHFP || $0.portType == .bluetoothLE 
-            }) {
-                try session.setPreferredInput(bluetoothInput)
-                print("Preferred input set to Bluetooth: \(bluetoothInput.portName)")
-            }
         } catch {
             print("Audio session setup failed: \(error)")
+        }
+    }
+    
+    /// Check and prefer Bluetooth mic before each recording
+    private func preferBluetoothMic() {
+        let session = AVAudioSession.sharedInstance()
+        if let inputs = session.availableInputs {
+            print("Available inputs: \(inputs.map { "\($0.portName) (\($0.portType.rawValue))" })")
+            if let btInput = inputs.first(where: {
+                $0.portType == .bluetoothHFP || $0.portType == .bluetoothLE || $0.portType == .bluetoothA2DP
+            }) {
+                do {
+                    try session.setPreferredInput(btInput)
+                    print("Using Bluetooth mic: \(btInput.portName)")
+                } catch {
+                    print("Failed to set Bluetooth input: \(error)")
+                }
+            }
         }
     }
     
@@ -102,6 +112,7 @@ class AudioRecorder: NSObject {
     // MARK: - Private
     
     private func beginRecording() {
+        preferBluetoothMic()
         let settings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
             AVSampleRateKey: 16000,
