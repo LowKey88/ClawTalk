@@ -60,6 +60,14 @@ class AppSettings {
         }
     }
     
+    var colorScheme: ColorScheme? {
+        switch appearanceMode {
+        case 1: return .light
+        case 2: return .dark
+        default: return nil  // follow system
+        }
+    }
+    
     // MARK: Profiles (stored properties for SwiftUI observation)
     
     var profiles: [BotProfile] = [] {

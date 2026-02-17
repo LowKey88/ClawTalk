@@ -12,14 +12,11 @@ struct ClawTalkApp: App {
         WindowGroup {
             ContentView()
                 .environment(settings)
+                .preferredColorScheme(settings.colorScheme)
                 .onAppear {
                     settings.migrateIfNeeded()
                     configureAudioForBackground()
                     setupInterruptionHandling()
-                    applyAppearance()
-                }
-                .onChange(of: settings.appearanceMode) {
-                    applyAppearance()
                 }
                 .onChange(of: scenePhase) { _, phase in
                     switch phase {
@@ -33,14 +30,6 @@ struct ClawTalkApp: App {
                         break
                     }
                 }
-        }
-    }
-    
-    private func applyAppearance() {
-        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
-        let style = settings.userInterfaceStyle
-        for window in windowScene.windows {
-            window.overrideUserInterfaceStyle = style
         }
     }
     
