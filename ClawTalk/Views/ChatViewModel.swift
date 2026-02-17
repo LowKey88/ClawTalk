@@ -185,10 +185,8 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
                 Task { @MainActor in
                     guard let self else { return }
                     if resumeListening && settings.isHandsFree {
-                        // Delay before resuming listening to avoid picking up
-                        // TTS audio echo/reverb through the mic
-                        self.state = .idle
-                        try? await Task.sleep(nanoseconds: 800_000_000) // 0.8s
+                        // Brief ignore period to avoid picking up TTS echo
+                        self.recorder.setIgnorePeriod(0.5)
                         self.startHandsFree(settings: settings)
                     } else {
                         self.state = .idle

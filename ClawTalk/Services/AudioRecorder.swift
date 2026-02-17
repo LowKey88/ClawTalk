@@ -23,6 +23,7 @@ class AudioRecorder: NSObject {
     private var isSpeechDetected = false
     private var speechStartTime: Date?
     private var lastSpeechTime: Date?
+    private var ignoreUntil: Date?
     
     private var recordingURL: URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("clawtalk_recording.m4a")
@@ -70,6 +71,11 @@ class AudioRecorder: NSObject {
         speechStartTime = nil
         lastSpeechTime = nil
         beginRecording()
+    }
+    
+    /// Ignore VAD input for a brief period (avoids TTS echo pickup)
+    func setIgnorePeriod(_ seconds: TimeInterval) {
+        ignoreUntil = Date().addingTimeInterval(seconds)
     }
     
     func stopListening() {
@@ -121,6 +127,10 @@ class AudioRecorder: NSObject {
         guard isVADMode else { return }
         
         let now = Date()
+        
+        // Ignore period after TTS to avoid echo
+        if let ignoreUntil, now < ignoreUntil { return }
+        ignoreUntil = nil
         
         if level > speechThreshold {
             // Speech detected
