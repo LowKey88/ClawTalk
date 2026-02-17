@@ -37,6 +37,22 @@ struct ChatView: View {
                             }
                         }
                     }
+                    .onChange(of: viewModel.messages.last?.content) {
+                        // Auto-scroll during streaming as content grows
+                        if let last = viewModel.messages.last {
+                            withAnimation {
+                                proxy.scrollTo(last.id, anchor: .bottom)
+                            }
+                        }
+                    }
+                    .onChange(of: viewModel.state) {
+                        // Scroll when state changes (thinking, speaking, etc.)
+                        if let last = viewModel.messages.last {
+                            withAnimation {
+                                proxy.scrollTo(last.id, anchor: .bottom)
+                            }
+                        }
+                    }
                 }
                 
                 Divider()
