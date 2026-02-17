@@ -9,6 +9,30 @@ enum ChatState {
     case thinking
     case streaming    // receiving streaming text
     case speaking
+    
+    var displayText: String {
+        switch self {
+        case .idle: return ""
+        case .listening: return "Listening"
+        case .recording: return "Recording"
+        case .transcribing: return "Transcribing"
+        case .thinking: return "Thinking"
+        case .streaming: return "Generating"
+        case .speaking: return "Speaking"
+        }
+    }
+    
+    var displayIcon: String {
+        switch self {
+        case .idle: return ""
+        case .listening: return "ear.fill"
+        case .recording: return "mic.fill"
+        case .transcribing: return "waveform"
+        case .thinking: return "brain"
+        case .streaming: return "text.cursor"
+        case .speaking: return "speaker.wave.2.fill"
+        }
+    }
 }
 
 @Observable

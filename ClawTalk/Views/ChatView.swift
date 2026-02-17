@@ -18,20 +18,8 @@ struct ChatView: View {
                                     .id(message.id)
                             }
                             
-                            if viewModel.state == .recording {
-                                StatusBubble(text: "Recording", icon: "mic.fill")
-                                    .id("status-bubble")
-                            } else if viewModel.state == .listening {
-                                StatusBubble(text: "Listening", icon: "ear.fill")
-                                    .id("status-bubble")
-                            } else if viewModel.state == .transcribing {
-                                StatusBubble(text: "Transcribing", icon: "waveform")
-                                    .id("status-bubble")
-                            } else if viewModel.state == .thinking {
-                                StatusBubble(text: "Thinking", icon: "brain")
-                                    .id("status-bubble")
-                            } else if viewModel.state == .speaking {
-                                StatusBubble(text: "Speaking", icon: "speaker.wave.2.fill")
+                            if viewModel.state != .idle {
+                                StatusBubble(text: viewModel.state.displayText, icon: viewModel.state.displayIcon)
                                     .id("status-bubble")
                             }
                             // Streaming text shows directly in message bubble (no status needed)
@@ -56,9 +44,7 @@ struct ChatView: View {
                     .onChange(of: viewModel.state) {
                         // Scroll to status bubble or last message when state changes
                         withAnimation {
-                            if viewModel.state == .recording || viewModel.state == .listening ||
-                               viewModel.state == .transcribing || viewModel.state == .thinking ||
-                               viewModel.state == .speaking {
+                            if viewModel.state != .idle {
                                 proxy.scrollTo("status-bubble", anchor: .bottom)
                             } else if let last = viewModel.messages.last {
                                 proxy.scrollTo(last.id, anchor: .bottom)
