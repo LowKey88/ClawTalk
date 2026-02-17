@@ -15,29 +15,30 @@ struct SettingsView: View {
                 // Profiles Section
                 Section {
                     ForEach(settings.profiles) { profile in
-                        HStack {
-                            Text(profile.emoji)
-                                .font(.title2)
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(profile.name)
-                                    .fontWeight(profile.id == settings.activeProfileID ? .bold : .regular)
-                                Text(profile.openclawURL)
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                    .lineLimit(1)
-                            }
-                            
-                            Spacer()
-                            
-                            if profile.id == settings.activeProfileID {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
-                            }
-                        }
-                        .contentShape(Rectangle())
-                        .onTapGesture {
+                        Button(action: {
                             settings.setActiveProfile(profile.id)
+                        }) {
+                            HStack {
+                                Text(profile.emoji)
+                                    .font(.title2)
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(profile.name)
+                                        .fontWeight(profile.id == settings.activeProfileID ? .bold : .regular)
+                                        .foregroundColor(.primary)
+                                    Text(profile.openclawURL)
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                }
+                                
+                                Spacer()
+                                
+                                if profile.id == settings.activeProfileID {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundColor(.green)
+                                }
+                            }
                         }
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) {
