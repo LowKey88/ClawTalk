@@ -24,23 +24,42 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
     private let player = AudioPlayer()
     private var pendingSettings: AppSettings?
     
+    private var currentProfileID: UUID?
+    
     override init() {
         super.init()
         recorder.vadDelegate = self
+    }
+    
+    // MARK: - Profile switching
+    
+    func switchToProfile(_ profileID: UUID?) {
+        guard profileID != currentProfileID else { return }
+        currentProfileID = profileID
         loadMessages()
     }
     
-    // MARK: - Persistence
+    // MARK: - Persistence (per-profile)
+    
+    private var messagesKey: String {
+        if let id = currentProfileID {
+            return "chatMessages_\(id.uuidString)"
+        }
+        return "chatMessages"
+    }
     
     private func saveMessages() {
         if let data = try? JSONEncoder().encode(messages) {
-            UserDefaults.standard.set(data, forKey: "chatMessages")
+            UserDefaults.standard.set(data, forKey: messagesKey)
         }
     }
     
     private func loadMessages() {
-        guard let data = UserDefaults.standard.data(forKey: "chatMessages"),
-              let saved = try? JSONDecoder().decode([ChatMessage].self, from: data) else { return }
+        guard let data = UserDefaults.standard.data(forKey: messagesKey),
+              let saved = try? JSONDecoder().decode([ChatMessage].self, from: data) else {
+            messages = []
+            return
+        }
         messages = saved
     }
     
@@ -191,6 +210,6 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
     
     func clearChat() {
         messages.removeAll()
-        UserDefaults.standard.removeObject(forKey: "chatMessages")
+        UserDefaults.standard.removeObject(forKey: messagesKey)
     }
 }

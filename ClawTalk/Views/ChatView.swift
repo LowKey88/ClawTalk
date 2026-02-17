@@ -149,7 +149,6 @@ struct ChatView: View {
                                 let impact = UINotificationFeedbackGenerator()
                                 impact.notificationOccurred(.success)
                                 settings.setActiveProfile(profile.id)
-                                viewModel.clearChat()
                             }) {
                                 HStack {
                                     Text("\(profile.emoji) \(profile.name)")
@@ -196,6 +195,14 @@ struct ChatView: View {
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView()
+            }
+            .onAppear {
+                viewModel.switchToProfile(settings.activeProfileID)
+            }
+            .onChange(of: settings.activeProfileID) { _, newID in
+                // Stop any active recording/listening before switching
+                viewModel.stopHandsFree()
+                viewModel.switchToProfile(newID)
             }
         }
     }

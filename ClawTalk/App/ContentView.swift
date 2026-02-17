@@ -17,7 +17,7 @@ struct ContentView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }
-        .id(settings.activeProfileID?.uuidString ?? "none")
+        // No .id() modifier — profile switching handled by ChatViewModel.switchToProfile()
     }
 }
 
