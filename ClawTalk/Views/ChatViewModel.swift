@@ -157,6 +157,17 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
         }
     }
     
+    // MARK: - Skip TTS
+    
+    func skipSpeaking(settings: AppSettings) {
+        player.stop()
+        if settings.isHandsFree {
+            startHandsFree(settings: settings)
+        } else {
+            state = .idle
+        }
+    }
+    
     func updateAudioLevel() {
         audioLevel = recorder.audioLevel
     }

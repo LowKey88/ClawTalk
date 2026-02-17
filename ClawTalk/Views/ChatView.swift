@@ -50,6 +50,22 @@ struct ChatView: View {
                             .padding(.horizontal)
                     }
                     
+                    // Skip button when speaking
+                    if viewModel.state == .speaking {
+                        Button(action: { viewModel.skipSpeaking(settings: settings) }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "forward.fill")
+                                Text("Skip")
+                            }
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 10)
+                            .background(Color.orange)
+                            .cornerRadius(20)
+                        }
+                    }
+                    
                     // Mic button
                     HStack {
                         Spacer()
