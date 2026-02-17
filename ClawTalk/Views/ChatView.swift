@@ -125,7 +125,7 @@ struct ChatView: View {
                             }
                             
                             if viewModel.state != .idle {
-                                StatusBubble(text: viewModel.state.displayText, icon: viewModel.state.displayIcon)
+                                StatusBubble(text: viewModel.state.displayText, icon: viewModel.state.displayIcon, color: viewModel.state.stateColor)
                                     .id("status-bubble")
                             }
                         }
@@ -412,43 +412,52 @@ struct MessageBubble: View {
 struct StatusBubble: View {
     let text: String
     let icon: String
+    var color: Color = .blue
     
     var body: some View {
         HStack {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .symbolEffect(.pulse)
+            HStack(spacing: 10) {
+                WaveDots(color: color)
                 Text(text)
                     .font(.subheadline)
-                TypingDotsView()
+                    .fontWeight(.medium)
+                    .foregroundColor(color)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(Color(.systemGray5))
-            .cornerRadius(18)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(color.opacity(0.1))
+            .cornerRadius(20)
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(color.opacity(0.2), lineWidth: 1)
+            )
             
             Spacer()
         }
     }
 }
 
-struct TypingDotsView: View {
-    @State private var activeDot = 0
+struct WaveDots: View {
+    let color: Color
+    var dotCount: Int = 4
+    @State private var phase: Double = 0
     
-    let timer = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
+    let timer = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
     
     var body: some View {
-        HStack(spacing: 5) {
-            ForEach(0..<3) { index in
+        HStack(spacing: 4) {
+            ForEach(0..<dotCount, id: \.self) { index in
+                let offset = sin(phase + Double(index) * 0.8) 
                 Circle()
-                    .fill(Color.blue.opacity(index == activeDot ? 1.0 : 0.35))
-                    .frame(width: 8, height: 8)
-                    .offset(y: index == activeDot ? -4 : 0)
-                    .animation(.easeInOut(duration: 0.3), value: activeDot)
+                    .fill(color)
+                    .frame(width: 7, height: 7)
+                    .scaleEffect(0.7 + 0.3 * max(0, offset))
+                    .opacity(0.5 + 0.5 * max(0, offset))
+                    .offset(y: CGFloat(-3 * max(0, offset)))
             }
         }
         .onReceive(timer) { _ in
-            activeDot = (activeDot + 1) % 3
+            phase += 0.12
         }
     }
 }

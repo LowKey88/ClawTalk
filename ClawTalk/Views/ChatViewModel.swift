@@ -56,6 +56,18 @@ enum ChatState {
         case .speaking: return "speaker.wave.2.fill"
         }
     }
+    
+    var stateColor: Color {
+        switch self {
+        case .idle: return .secondary
+        case .listening: return .green
+        case .recording: return .red
+        case .transcribing: return .purple
+        case .thinking: return .blue
+        case .streaming: return .cyan
+        case .speaking: return .orange
+        }
+    }
 }
 
 @Observable
