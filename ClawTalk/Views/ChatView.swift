@@ -27,29 +27,13 @@ struct ChatView: View {
                         .padding()
                     }
                     .onChange(of: viewModel.messages.count) {
-                        if let last = viewModel.messages.last {
-                            withAnimation {
-                                proxy.scrollTo(last.id, anchor: .bottom)
-                            }
-                        }
+                        scrollToBottom(proxy: proxy)
                     }
                     .onChange(of: viewModel.messages.last?.content) {
-                        // Auto-scroll during streaming as content grows
-                        if let last = viewModel.messages.last {
-                            withAnimation {
-                                proxy.scrollTo(last.id, anchor: .bottom)
-                            }
-                        }
+                        scrollToBottom(proxy: proxy)
                     }
                     .onChange(of: viewModel.state) {
-                        // Scroll to status bubble or last message when state changes
-                        withAnimation {
-                            if viewModel.state != .idle {
-                                proxy.scrollTo("status-bubble", anchor: .bottom)
-                            } else if let last = viewModel.messages.last {
-                                proxy.scrollTo(last.id, anchor: .bottom)
-                            }
-                        }
+                        scrollToBottom(proxy: proxy)
                     }
                 }
                 
@@ -201,6 +185,17 @@ struct ChatView: View {
                 // Stop any active recording/listening before switching
                 viewModel.stopHandsFree()
                 viewModel.switchToProfile(newID)
+            }
+        }
+    }
+    
+    private func scrollToBottom(proxy: ScrollViewProxy) {
+        withAnimation {
+            // Always scroll to status bubble if visible, otherwise last message
+            if viewModel.state != .idle {
+                proxy.scrollTo("status-bubble", anchor: .bottom)
+            } else if let last = viewModel.messages.last {
+                proxy.scrollTo(last.id, anchor: .bottom)
             }
         }
     }
