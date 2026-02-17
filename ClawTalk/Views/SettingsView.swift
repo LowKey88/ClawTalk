@@ -155,8 +155,8 @@ struct SettingsView: View {
                         case .checking:
                             ProgressView()
                                 .scaleEffect(0.8)
-                        case .connected:
-                            Label("Connected", systemImage: "checkmark.circle.fill")
+                        case .connected(let ms):
+                            Label("Connected (\(ms)ms)", systemImage: "checkmark.circle.fill")
                                 .foregroundColor(.green)
                         case .failed(let msg):
                             Label(msg, systemImage: "xmark.circle.fill")
@@ -360,7 +360,7 @@ struct ProfileEditorView: View {
 enum ConnectionStatus {
     case unknown
     case checking
-    case connected
+    case connected(Int)  // latency in ms
     case failed(String)
 }
 
@@ -384,13 +384,15 @@ extension SettingsView {
         request.timeoutInterval = 8
         
         Task {
+            let startTime = CFAbsoluteTimeGetCurrent()
             do {
                 let (_, response) = try await URLSession.shared.data(for: request)
+                let elapsed = Int((CFAbsoluteTimeGetCurrent() - startTime) * 1000)
                 if let http = response as? HTTPURLResponse {
                     // Any response means server is reachable and auth is accepted
                     // 405 = Method Not Allowed (HEAD not supported but server alive)
                     if (200...499).contains(http.statusCode) && http.statusCode != 401 && http.statusCode != 403 {
-                        connectionStatus = .connected
+                        connectionStatus = .connected(elapsed)
                     } else if http.statusCode == 401 || http.statusCode == 403 {
                         connectionStatus = .failed("Auth failed")
                     } else {
