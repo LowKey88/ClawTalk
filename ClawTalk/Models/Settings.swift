@@ -56,7 +56,11 @@ class AppSettings {
         switch appearanceMode {
         case 1: return .light
         case 2: return .dark
-        default: return nil
+        default:
+            // Explicitly return system's current scheme instead of nil
+            // nil doesn't reliably reset after a view-level override
+            let style = UITraitCollection.current.userInterfaceStyle
+            return style == .dark ? .dark : .light
         }
     }
     
