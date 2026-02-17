@@ -16,6 +16,7 @@ class OpenClawService {
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("main", forHTTPHeaderField: "x-openclaw-session-key")
         request.timeoutInterval = 60
         
         // Add to conversation history
@@ -25,8 +26,9 @@ class OpenClawService {
         let messages = Array(conversationHistory.suffix(20))
         
         let body: [String: Any] = [
-            "model": "auto",
-            "messages": messages
+            "model": "openclaw:main",
+            "messages": messages,
+            "user": "syam"
         ]
         
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
