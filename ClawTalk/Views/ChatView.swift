@@ -499,5 +499,4 @@ struct WaveDots: View {
 #Preview {
     ChatView()
         .environment(AppSettings())
-        .preferredColorScheme(.dark)
 }

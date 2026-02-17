@@ -96,5 +96,4 @@ struct NeedKeysView: View {
 #Preview {
     ContentView()
         .environment(AppSettings())
-        .preferredColorScheme(.dark)
 }

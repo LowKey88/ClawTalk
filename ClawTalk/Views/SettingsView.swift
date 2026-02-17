@@ -411,5 +411,4 @@ extension SettingsView {
 #Preview {
     SettingsView()
         .environment(AppSettings())
-        .preferredColorScheme(.dark)
 }
