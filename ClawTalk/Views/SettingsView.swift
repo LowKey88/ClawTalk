@@ -364,10 +364,9 @@ extension SettingsView {
         guard let profile = settings.activeProfile else { return }
         connectionStatus = .checking
         
-        // Try hitting the OpenClaw models endpoint
-        let urlString = profile.openclawURL.hasSuffix("/")
-            ? "\(profile.openclawURL)models"
-            : "\(profile.openclawURL)/models"
+        // Test connection by sending a minimal chat completion request
+        let baseURL = profile.openclawURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let urlString = "\(baseURL)/v1/chat/completions"
         
         guard let url = URL(string: urlString) else {
             connectionStatus = .failed("Invalid URL")
@@ -375,13 +374,22 @@ extension SettingsView {
         }
         
         var request = URLRequest(url: url)
+        request.httpMethod = "POST"
         request.setValue("Bearer \(profile.gatewayToken)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 10
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 15
+        
+        let body: [String: Any] = [
+            "model": "openclaw:main",
+            "messages": [["role": "user", "content": "ping"]],
+            "max_tokens": 1
+        ]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         
         Task {
             do {
                 let (_, response) = try await URLSession.shared.data(for: request)
-                if let http = response as? HTTPURLResponse, http.statusCode == 200 {
+                if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
                     connectionStatus = .connected
                 } else if let http = response as? HTTPURLResponse {
                     connectionStatus = .failed("HTTP \(http.statusCode)")
