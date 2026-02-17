@@ -68,6 +68,18 @@ class AppSettings {
         }
     }
     
+    /// For sheets/modals where nil doesn't inherit properly
+    var resolvedColorScheme: ColorScheme {
+        switch appearanceMode {
+        case 1: return .light
+        case 2: return .dark
+        default:
+            // Detect current system appearance
+            let style = UITraitCollection.current.userInterfaceStyle
+            return style == .dark ? .dark : .light
+        }
+    }
+    
     // MARK: Profiles (stored properties for SwiftUI observation)
     
     var profiles: [BotProfile] = [] {
