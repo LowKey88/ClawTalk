@@ -15,8 +15,31 @@ struct ChatView: View {
                 // Chat messages
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(spacing: 12) {
-                            ForEach(viewModel.messages) { message in
+                        if viewModel.messages.isEmpty && viewModel.state == .idle {
+                            // Empty state
+                            VStack(spacing: 16) {
+                                Spacer()
+                                    .frame(height: 80)
+                                Text(settings.activeProfile?.emoji ?? "🤖")
+                                    .font(.system(size: 64))
+                                Text("Tap the mic to start talking")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 60)
+                        }
+                        
+                        LazyVStack(spacing: 4) {
+                            ForEach(Array(viewModel.messages.enumerated()), id: \.element.id) { index, message in
+                                // Date separator
+                                if index == 0 || !Calendar.current.isDate(message.timestamp, inSameDayAs: viewModel.messages[index - 1].timestamp) {
+                                    Text(dateSeparatorText(for: message.timestamp))
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                        .padding(.vertical, 8)
+                                }
+                                
                                 MessageBubble(
                                     message: message,
                                     botEmoji: settings.activeProfile?.emoji ?? "🤖",
@@ -41,7 +64,6 @@ struct ChatView: View {
                                 StatusBubble(text: viewModel.state.displayText, icon: viewModel.state.displayIcon)
                                     .id("status-bubble")
                             }
-                            // Streaming text shows directly in message bubble (no status needed)
                         }
                         .padding()
                     }
@@ -154,16 +176,15 @@ struct ChatView: View {
                             Label("Manage Profiles", systemImage: "person.2.fill")
                         }
                     } label: {
-                        HStack(spacing: 4) {
+                        HStack(spacing: 5) {
                             if let profile = settings.activeProfile {
                                 Text(profile.emoji)
-                                HStack(spacing: 3) {
-                                    Text(profile.name)
-                                        .fontWeight(.semibold)
-                                    Circle()
-                                        .fill(isConnected ? .green : .red)
-                                        .frame(width: 8, height: 8)
-                                }
+                                Text(profile.name)
+                                    .fontWeight(.semibold)
+                                Circle()
+                                    .fill(isConnected ? .green : Color(.systemGray4))
+                                    .frame(width: 7, height: 7)
+                                    .offset(y: 0.5)
                             } else {
                                 Text("ClawTalk")
                                     .fontWeight(.semibold)
@@ -177,13 +198,19 @@ struct ChatView: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: { showSettings = true }) {
-                        Image(systemName: "gearshape.fill")
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 17))
+                            .foregroundColor(.primary)
                     }
+                    .buttonStyle(.plain)
                 }
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: { showClearConfirm = true }) {
                         Image(systemName: "square.and.pencil")
+                            .font(.system(size: 17))
+                            .foregroundColor(.primary)
                     }
+                    .buttonStyle(.plain)
                 }
             }
             .sheet(isPresented: $showSettings) {
@@ -247,6 +274,19 @@ struct ChatView: View {
             } catch {
                 isConnected = false
             }
+        }
+    }
+    
+    private func dateSeparatorText(for date: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) {
+            return "Today"
+        } else if calendar.isDateInYesterday(date) {
+            return "Yesterday"
+        } else {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "EEEE, MMM d"
+            return formatter.string(from: date)
         }
     }
     
