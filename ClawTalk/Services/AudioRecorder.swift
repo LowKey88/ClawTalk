@@ -39,6 +39,14 @@ class AudioRecorder: NSObject {
         do {
             try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP])
             try session.setActive(true)
+            
+            // Prefer Bluetooth mic if available (e.g. Meta Ray-Ban)
+            if let bluetoothInput = session.availableInputs?.first(where: { 
+                $0.portType == .bluetoothHFP || $0.portType == .bluetoothLE 
+            }) {
+                try session.setPreferredInput(bluetoothInput)
+                print("Preferred input set to Bluetooth: \(bluetoothInput.portName)")
+            }
         } catch {
             print("Audio session setup failed: \(error)")
         }
