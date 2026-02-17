@@ -48,7 +48,7 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
     private let recorder = AudioRecorder()
     private let player = AudioPlayer()
     private var pendingSettings: AppSettings?
-    private var levelTimer: Timer?
+    private var levelTimer: DispatchSourceTimer?
     
     private var currentProfileID: UUID?
     private var lastSpokenText: String = ""
@@ -336,7 +336,9 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
     
     private func startLevelTimer() {
         stopLevelTimer()
-        levelTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .userInteractive))
+        timer.schedule(deadline: .now(), repeating: 0.05)
+        timer.setEventHandler { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
                 self.audioLevel = self.recorder.audioLevel
@@ -344,27 +346,33 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
                 self.speakingLevel = self.player.audioLevel
             }
         }
+        timer.resume()
+        levelTimer = timer
     }
     
     func startSpeakingTimer() {
         stopLevelTimer()
-        levelTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .userInteractive))
+        timer.schedule(deadline: .now(), repeating: 0.05)
+        timer.setEventHandler { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
                 self.player.updateMeters()
                 self.speakingLevel = self.player.audioLevel
             }
         }
+        timer.resume()
+        levelTimer = timer
     }
     
     func stopSpeakingTimer() {
-        levelTimer?.invalidate()
+        levelTimer?.cancel()
         levelTimer = nil
         speakingLevel = 0
     }
     
     private func stopLevelTimer() {
-        levelTimer?.invalidate()
+        levelTimer?.cancel()
         levelTimer = nil
         audioLevel = 0
         speakingLevel = 0

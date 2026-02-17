@@ -18,7 +18,7 @@ class AudioRecorder: NSObject {
     private let minSpeechDuration: TimeInterval = 0.3 // minimum speech to count
     
     private var audioRecorder: AVAudioRecorder?
-    private var levelTimer: Timer?
+    private var levelTimer: DispatchSourceTimer?
     private var isVADMode = false
     private var isSpeechDetected = false
     private var speechStartTime: Date?
@@ -128,16 +128,20 @@ class AudioRecorder: NSObject {
             audioRecorder?.record()
             isRecording = true
             
-            levelTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .userInteractive))
+            timer.schedule(deadline: .now(), repeating: 0.05)
+            timer.setEventHandler { [weak self] in
                 self?.updateMeters()
             }
+            timer.resume()
+            levelTimer = timer
         } catch {
             print("Recording failed: \(error)")
         }
     }
     
     private func stopMonitoring() {
-        levelTimer?.invalidate()
+        levelTimer?.cancel()
         levelTimer = nil
     }
     
