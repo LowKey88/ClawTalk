@@ -32,10 +32,6 @@ Mic → STT → OpenClaw API (streaming) → TTS → Speaker
   <img src="screenshots/edit-profile.jpg" width="230" alt="Edit profile">
 </p>
 
-<p align="center">
-  <img src="screenshots/connection-status.jpg" width="230" alt="Connection status">
-</p>
-
 ## Requirements
 
 - iPhone (iOS 17.0+)
