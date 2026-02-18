@@ -20,7 +20,21 @@ Mic → STT → OpenClaw API (streaming) → TTS → Speaker
 
 ## Screenshots
 
-*Coming soon*
+<p align="center">
+  <img src="screenshots/hands-free-listening.jpg" width="230" alt="Hands-free listening mode">
+  <img src="screenshots/speaking-streaming.jpg" width="230" alt="Speaking with streaming text">
+  <img src="screenshots/conversation.jpg" width="230" alt="Conversation with agent">
+</p>
+
+<p align="center">
+  <img src="screenshots/profile-switcher.jpg" width="230" alt="Profile switcher">
+  <img src="screenshots/settings.jpg" width="230" alt="Settings">
+  <img src="screenshots/edit-profile.jpg" width="230" alt="Edit profile">
+</p>
+
+<p align="center">
+  <img src="screenshots/connection-status.jpg" width="230" alt="Connection status">
+</p>
 
 ## Requirements
 
