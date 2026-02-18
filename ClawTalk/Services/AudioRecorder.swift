@@ -17,6 +17,12 @@ class AudioRecorder: NSObject {
     private let silenceTimeout: TimeInterval = 1.5 // seconds of silence to end
     private let minSpeechDuration: TimeInterval = 0.3 // minimum speech to count
     
+    /// Whether the current audio output route is a built-in speaker/receiver (echo-prone)
+    var isUsingSpeaker: Bool {
+        let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
+        return outputs.contains { $0.portType == .builtInSpeaker || $0.portType == .builtInReceiver }
+    }
+    
     private var audioRecorder: AVAudioRecorder?
     private var levelTimer: DispatchSourceTimer?
     private var isVADMode = false
@@ -93,13 +99,16 @@ class AudioRecorder: NSObject {
         beginRecording()
     }
     
-    /// Ignore VAD input for a brief period (avoids TTS echo pickup)
+    /// Ignore VAD input for a brief period (avoids TTS echo pickup).
+    /// Automatically extends the period when using built-in speaker (more echo-prone).
     func setIgnorePeriod(_ seconds: TimeInterval) {
-        ignoreUntil = Date().addingTimeInterval(seconds)
+        let adjusted = isUsingSpeaker ? seconds * 2.0 : seconds
+        ignoreUntil = Date().addingTimeInterval(adjusted)
         // Reset any in-progress speech detection
         isSpeechDetected = false
         speechStartTime = nil
         lastSpeechTime = nil
+        print("Echo ignore: \(adjusted)s (speaker: \(isUsingSpeaker))")
     }
     
     func stopListening() {
@@ -204,7 +213,10 @@ class AudioRecorder: NSObject {
         if let ignoreUntil, now < ignoreUntil { return }
         ignoreUntil = nil
         
-        if level > speechThreshold {
+        // Use higher threshold on speaker to filter echo remnants
+        let effectiveThreshold = isUsingSpeaker ? speechThreshold + 5.0 : speechThreshold
+        
+        if level > effectiveThreshold {
             // Speech detected
             lastSpeechTime = now
             
