@@ -190,7 +190,7 @@ struct SettingsView: View {
                     checkConnection()
                 }
             }
-            .preferredColorScheme(settings.colorScheme)
+            .preferredColorScheme(settings.resolvedColorScheme)
             .sheet(item: $editingProfile) { profile in
                 ProfileEditorView(profile: profile, isNew: false)
             }

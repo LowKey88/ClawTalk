@@ -60,6 +60,18 @@ class AppSettings {
         }
     }
     
+    /// Always returns a concrete ColorScheme - for sheets that don't inherit system appearance.
+    /// When mode is System, queries the device's actual appearance via UIScreen.
+    var resolvedColorScheme: ColorScheme {
+        switch appearanceMode {
+        case 1: return .light
+        case 2: return .dark
+        default:
+            let style = UIScreen.main.traitCollection.userInterfaceStyle
+            return style == .dark ? .dark : .light
+        }
+    }
+    
     // MARK: Profiles (stored properties for SwiftUI observation)
     
     var profiles: [BotProfile] = [] {
