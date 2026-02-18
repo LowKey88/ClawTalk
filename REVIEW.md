@@ -1,104 +1,161 @@
-# ClawTalk Code Review
+# ClawTalk Code Review (v2)
 
 **Reviewed:** 2026-02-18
 **Version:** v1.1
-**Scope:** Full codebase (14 source files, ~2,600 lines Swift)
+**Scope:** Full codebase — 14 source files, ~2,600 lines Swift
 
 ---
 
 ## Overview
 
-ClawTalk is a native iOS voice chat app — Mic → STT → LLM → TTS → Speaker — built with Swift/SwiftUI. The architecture is clean for a v1.1 project: clear separation between Views, Services, and Models, with a well-designed state machine driving the UI.
+ClawTalk is a native iOS voice chat app (Mic → STT → LLM → TTS → Speaker) built with Swift/SwiftUI. Clean separation between Views, Services, and Models, with an enum-driven state machine. Good foundation — but several runtime bugs and architectural issues need attention before wider use.
 
 ---
 
 ## What's Done Well
 
-### Architecture
-- The `ChatState` enum-driven state machine is solid. Each state maps to a display string, icon, and color — single source of truth for the entire UI.
-- `TTSChunkQueue` as a Swift `actor` is the correct concurrency primitive. It serializes TTS API calls so audio chunks always play in order without manual locking.
-- Profile isolation (per-profile messages, voice, URL) is cleanly implemented via `messagesKey` derived from the profile UUID.
-
-### Audio Pipeline
-- Chunked TTS streaming (speak while LLM is still generating) is a meaningful UX optimization. The chunk-on-punctuation + max-length fallback at 120 chars is a practical approach.
-- VAD with configurable thresholds, silence timeout, min speech duration, and echo ignore period covers the common edge cases.
-- Bluetooth mic preference (`preferBluetoothMic()`) called before each recording is a good detail for headset users.
-
-### UI/UX
-- The `HandsFreeButton` that changes icon/color based on state (ear → arrow-up → stop) is intuitive.
-- Date separators, context menus (copy/delete), error retry on tap — these are polished touches.
+- **State machine** (`ChatState` enum) — single source of truth for display text, icon, and color across the entire UI. No scattered state checks.
+- **`TTSChunkQueue` actor** — correct concurrency primitive for serializing TTS API calls. Chunks always play in order without manual locks.
+- **Chunked TTS streaming** — speaking while the LLM is still generating. The punctuation-based chunking + 120-char max fallback is practical.
+- **VAD implementation** — configurable thresholds (-25dB), silence timeout (1.5s), minimum speech duration (0.3s), and echo ignore period cover real-world edge cases.
+- **Profile isolation** — per-profile messages, voice, URL, all cleanly keyed by profile UUID.
+- **Bluetooth mic preference** — `preferBluetoothMic()` called before each recording. Good for headset/glasses users.
+- **UI polish** — HandsFreeButton state transitions, date separators, context menus, error retry on tap, waveform visualizations.
 
 ---
 
-## Issues Found
+## Critical / High Issues
 
-### 1. Security: API Keys in UserDefaults (High)
+### 1. `saveMessages()` fires on every streaming token (High — Performance)
 
-**`Settings.swift:37-44`** — API keys (OpenAI, ElevenLabs) are stored in plain `UserDefaults`. This is readable by any process with the same sandbox, visible in iTunes backups, and not encrypted at rest.
+**`ChatViewModel.swift:76-78`** — `messages` has a `didSet { saveMessages() }`. During streaming, `messages[messageIndex].content += token` triggers this for every token. Each call runs `JSONEncoder().encode(messages)` and writes to UserDefaults. On a typical response you get 50-200 tokens, each triggering a full JSON serialization + disk write.
 
-**Recommendation:** Use Keychain Services via `SecItemAdd`/`SecItemCopyMatching`, or a wrapper like `KeychainAccess`. Gateway tokens in `BotProfile` (`Settings.swift:11`) have the same issue since they're encoded to UserDefaults with the profile array.
+**Impact:** UI jank during streaming, battery drain, unnecessary disk I/O.
 
-### 2. Security: Hardcoded User Identity (Medium)
+**Fix:** Debounce saves — only save after streaming completes, or use a timer (e.g. save at most once per second).
 
-**`OpenClawService.swift:31`** — `"user": "syam"` is hardcoded in the request body. Should come from settings or be derived from the device/profile.
+### 2. `messageIndex` can crash if messages mutate during streaming (High — Crash)
 
-### 3. Bug: New URLSession Created Per Streaming Call (Medium)
+**`ChatViewModel.swift:248`** — `let messageIndex = messages.count - 1` is captured once. But the user can delete messages via context menu or clear chat during streaming. If a message is removed, `messageIndex` points to the wrong message or crashes with index-out-of-bounds at line 295: `self.messages[messageIndex].content += token`.
 
-**`OpenClawService.swift:38-41`** — A new `URLSession(configuration: config)` is created every call to `sendMessageStreaming`, and is never invalidated. Each call leaks a session (and its internal connection pool/delegate queue).
+**Fix:** Track the message by its `UUID` instead of index. Find it with `firstIndex(where:)` before each mutation.
 
-**Fix:** Create the URLSession once in `init()` and reuse it, or call `session.finishTasksAndInvalidate()` after the stream completes.
+### 3. No task cancellation — `stopAll()` doesn't cancel the pipeline (High — Bug)
 
-### 4. Bug: Conversation History Not Synced With Persisted Messages (Medium)
+**`ChatViewModel.swift:165-172`** — `stopAll()` stops the player and sets state to `.idle`, but the running `processAudio` Task at line 143/182 continues executing in the background. It will continue to call STT, LLM, and TTS APIs, then append messages and start playback after the user already pressed stop.
 
-`OpenClawService` is instantiated fresh on every `processAudio` call (`ChatViewModel.swift:243`), which means `conversationHistory` starts empty each time. The last 20 messages sent to the LLM will only include messages from the current session — not the actual conversation history.
+**Fix:** Store the `Task` handle, cancel it in `stopAll()`, and check `Task.isCancelled` at each pipeline stage.
 
-**Fix:** Pass the existing `messages` array when building the API payload, or keep a single `OpenClawService` instance on the ViewModel.
+### 4. API keys stored in plain UserDefaults (High — Security)
 
-### 5. Bug: Race Condition in Streaming Token Callback (Medium)
+**`Settings.swift:37-44`** — OpenAI and ElevenLabs API keys in `UserDefaults`. Readable in device backups, visible to any process in the sandbox. Gateway tokens in `BotProfile` (line 11) have the same issue — they're JSON-encoded into UserDefaults with the profile array.
 
-**`ChatViewModel.swift:287-317`** — `sendMessageStreaming` calls `onToken` from the URLSession byte stream, which spawns `Task { @MainActor in ... }` for each token. These `Task` blocks are not guaranteed to execute in order.
-
-**Fix:** Use an `AsyncStream` or accumulate tokens in the service and deliver them on MainActor in a serial loop.
-
-### 6. Bug: `finishQueue()` May Complete Prematurely (Medium)
-
-**`AudioPlayer.swift:39-49`** — `finishQueue()` checks `!isPlaying && queue.isEmpty` at the moment it's called. But TTS chunks are enqueued asynchronously via `TTSChunkQueue`. If the last `ttsQueue.enqueue()` hasn't completed yet, it will see an empty queue and fire completion early.
-
-**Fix:** Add an `isFinished` flag and defer completion to `audioPlayerDidFinishPlaying` only after both the flag is set and the queue is empty.
-
-### 7. Code Duplication: `retryLastMessage` (Low-Medium)
-
-**`ChatViewModel.swift:442-537`** — Duplicates ~90 lines from `processAudio` (the entire streaming + chunked TTS pipeline).
-
-**Fix:** Extract into a shared method like `sendToAgent(transcript:settings:resumeListening:)`.
-
-### 8. Thread Safety: AudioRecorder Meter Updates (Low)
-
-**`AudioRecorder.swift:176-182`** — The level timer runs on a global dispatch queue and writes `audioLevel` (non-atomic), while the same property is read from `@MainActor` code.
-
-**Fix:** Mark `AudioRecorder` as `@MainActor`, or make `audioLevel` access thread-safe.
-
-### 9. `isConnected` Check Accepts 4xx (Low)
-
-**`ChatView.swift:286`** — `(200...499)` minus 401/403 considers 404, 422, etc. as "connected". A 404 could mean the endpoint path is wrong. Consider also excluding 404.
-
-### 10. UserDefaults for Chat History (Low)
-
-**`ChatViewModel.swift:114-116`** — Long conversations will bloat UserDefaults, which is loaded entirely into memory at launch. Should eventually move to file-based storage.
-
-### 11. Missing `Sendable` Conformance (Low)
-
-Several closures cross isolation boundaries without `@Sendable`. Will produce warnings/errors under Swift 6 strict concurrency checking.
+**Fix:** Use iOS Keychain via `SecItemAdd`/`SecItemCopyMatching`.
 
 ---
 
-## Minor Suggestions
+## Medium Issues
 
-- **Force-unwrap on URL** (`OpenClawService.swift:16, 79`): `URL(string:)!` will crash on malformed input. Use `guard let` + throw.
-- **Unused `Combine` imports** in `AudioRecorder.swift:3` and `ChatView.swift:2`.
-- **`startSpeakingTimer()` access level** (`ChatViewModel.swift:395`): Should be `private` like `startLevelTimer()`.
-- **WaveDots timer runs indefinitely** (`ChatView.swift:479`): `Timer.publish` never stops off-screen.
-- **Echo detection** (`ChatViewModel.swift:439`): 40% word overlap is aggressive. Common words ("the", "a", "is") could trigger false echoes. Consider filtering stop words.
+### 5. LLM only sees 1 message — conversation history always empty (Medium — Bug)
+
+**`ChatViewModel.swift:243`** — `OpenClawService` is instantiated fresh every call. Its `conversationHistory` starts empty. The "last 20 messages" sent to the LLM (`OpenClawService.swift:26`) only contains the current message. The bot has no memory of the conversation.
+
+**Fix:** Pass `viewModel.messages` to the service, or keep a single service instance per profile.
+
+### 6. URLSession leaked on every streaming call (Medium — Memory Leak)
+
+**`OpenClawService.swift:38-41`** — `URLSession(configuration: config)` is created per call and never invalidated. Each leaks a session with its internal connection pool and delegate queue. Over a 30-minute conversation with 20+ exchanges, this accumulates.
+
+**Fix:** Create the session once in `init()` and call `session.finishTasksAndInvalidate()` in `deinit`.
+
+### 7. `finishQueue()` races with fire-and-forget TTS tasks (Medium — Bug)
+
+**`ChatViewModel.swift:281-285`** — `speakChunk()` uses `Task { await ttsQueue.enqueue(text:) }` (fire-and-forget). At line 348, `player.finishQueue()` runs after `sendMessageStreaming` returns. But the fire-and-forget TTS tasks from the streaming callback may still be in-flight. `finishQueue()` sees an empty queue and fires the completion callback early, cutting off the last chunks.
+
+**Fix:** Track pending chunk count in `TTSChunkQueue`. Only call `finishQueue()` after all chunks are confirmed enqueued, or add an `isFinished` flag to `AudioPlayer` and defer completion.
+
+### 8. Single recording file path — overwrite race (Medium — Bug)
+
+**`AudioRecorder.swift:29-31`** — `recordingURL` always returns the same path (`clawtalk_recording.m4a`). When VAD delivers `audioURL` to the delegate, processing starts async (STT upload). If the hands-free loop restarts recording before STT reads the file, the new recording overwrites the file being uploaded.
+
+**Fix:** Use unique filenames per recording, e.g. `clawtalk_\(UUID()).m4a`. Clean up after STT completes.
+
+### 9. Hardcoded `"user": "syam"` in API requests (Medium — Security/Correctness)
+
+**`OpenClawService.swift:31, 93`** — Hardcoded user identifier sent to the backend. Should come from profile settings or be derived from the device.
+
+### 10. Audio session configured in 3 places with different options (Medium — Bug)
+
+Audio session is set up in:
+- `ClawTalkApp.swift:39` — uses `.mixWithOthers`
+- `AudioRecorder.swift:41` — no `.mixWithOthers`
+- `AudioPlayer.swift:63` — no `.mixWithOthers`
+
+The last call wins. `AudioRecorder.setupAudioSession()` runs in `init()` and overrides the app-level configuration, removing `.mixWithOthers`. Then `AudioPlayer.prepareAudioSession()` overrides again before each playback. This creates inconsistent audio behavior.
+
+**Fix:** Configure the audio session once in the App struct. Remove the duplicate setup calls from AudioRecorder and AudioPlayer.
+
+### 11. Code duplication: `retryLastMessage` copies 90 lines from `processAudio` (Medium — Maintainability)
+
+**`ChatViewModel.swift:442-537`** — The entire streaming + chunked TTS pipeline is duplicated. The retry version also misses `resumeListening` behavior and `lastSpokenText` echo tracking differences. Any bug fix needs to be applied in two places.
+
+**Fix:** Extract into a shared `sendToAgent(transcript:settings:resumeListening:)` method.
+
+---
+
+## Low Issues
+
+### 12. `isConfigured` computed property has side effects (Low — Code Smell)
+
+**`Settings.swift:114-126`** — Reading `isConfigured` can mutate `activeProfileID` (line 118). A getter with side effects causes unpredictable behavior with SwiftUI's observation system, which may re-evaluate this property at unexpected times.
+
+**Fix:** Move the auto-select-first-profile logic into `init()` or a dedicated method.
+
+### 13. Thread safety: `audioLevel` written from background, read from MainActor (Low — Data Race)
+
+**`AudioRecorder.swift:193-197`** — `updateMeters()` runs on `DispatchQueue.global(qos: .userInteractive)` and writes `audioLevel`. `ChatViewModel`'s `startLevelTimer()` reads it from `@MainActor` context. No synchronization.
+
+**Fix:** Make `audioLevel` reads/writes atomic, or dispatch the write to MainActor.
+
+### 14. `DateFormatter` created on every call (Low — Performance)
+
+**`ChatView.swift:297-308`** — `dateSeparatorText(for:)` allocates a new `DateFormatter` each invocation. `DateFormatter` is expensive to create. During scroll, this is called per visible message.
+
+**Fix:** Use a `static let` formatter.
+
+### 15. `WaveDots` timer runs indefinitely even when off-screen (Low — Resource Waste)
+
+**`ChatView.swift:479`** — `Timer.publish(every: 0.05)` starts on init and never stops. When `StatusBubble` is not visible (state is `.idle`), the `WaveDots` view is not rendered — but if SwiftUI keeps the view alive in the hierarchy, the timer keeps firing at 20Hz.
+
+### 16. `sendMessage` (non-streaming) is dead code (Low — Cleanup)
+
+**`OpenClawService.swift:78-109`** — Never called anywhere. Remove or mark as future use.
+
+### 17. Force-unwraps on URL construction (Low — Crash Risk)
+
+**`OpenClawService.swift:16, 79`**, **`WhisperService.swift:11`**, **`ElevenLabsService.swift:19, 47`** — `URL(string:)!` will crash on malformed input. User-provided URLs (from profile settings) can contain spaces, non-ASCII characters, etc.
+
+**Fix:** Use `guard let url = URL(string:) else { throw }`.
+
+### 18. No timeouts on STT/TTS requests (Low — UX)
+
+**`WhisperService.swift`** and **`ElevenLabsService.swift`** use `URLSession.shared` defaults (60s timeout). For a real-time voice app, 15-20s would be more appropriate to fail fast.
+
+### 19. Hallucination filter hardcodes language assumption (Low — Correctness)
+
+**`WhisperService.swift:77-81`** — The Latin character ratio check (<30% = discard) assumes English/Malay speakers. Users speaking Arabic, Hindi, Thai, or other non-Latin scripts would have legitimate transcriptions silently discarded.
+
+### 20. Unused `Combine` imports (Low — Cleanup)
+
+**`AudioRecorder.swift:3`**, **`AudioPlayer.swift:3`**, **`ChatView.swift:2`** — `import Combine` not used.
+
+### 21. `startSpeakingTimer()` is `internal` — should be `private` (Low — Encapsulation)
+
+**`ChatViewModel.swift:395`** — All other timer methods are `private`. This one is exposed unnecessarily.
+
+### 22. Echo detection too aggressive with common words (Low — False Positives)
+
+**`ChatViewModel.swift:425-440`** — 40% word overlap using raw word sets. Short sentences with common words ("I think so", "that is good") can easily hit 40% overlap with unrelated responses. No stop-word filtering.
 
 ---
 
@@ -106,11 +163,21 @@ Several closures cross isolation boundaries without `@Sendable`. Will produce wa
 
 | Category | Count |
 |---|---|
-| Security issues | 2 |
-| Bugs | 4 |
-| Code quality | 3 |
-| Minor / style | 5 |
+| Critical / High | 4 |
+| Medium | 7 |
+| Low | 11 |
+| **Total** | **22** |
 
-The app's core architecture is sound — the state machine, actor-based TTS queue, and chunked streaming pipeline show good iOS engineering. The main areas to address are: **Keychain for secrets**, **fixing the URLSession leak**, **syncing conversation history with the LLM**, and **deduplicating the retry logic**.
+### Top 5 Priorities
 
-For a v1.1 personal project, this is solid work.
+1. **Debounce `saveMessages()`** — JSON encoding on every streaming token is the most impactful performance fix
+2. **Track messages by UUID, not index** — prevents crashes during streaming if user interacts with messages
+3. **Cancel tasks on `stopAll()`** — prevents ghost API calls and state corruption after user stops
+4. **Pass conversation history to LLM** — the bot currently has no memory between exchanges
+5. **Store API keys in Keychain** — required for any public release
+
+### Architecture Assessment
+
+The state machine, actor-based TTS queue, and chunked streaming pipeline show good iOS engineering. The main structural issue is that `ChatViewModel.processAudio()` is a 150-line monolith that handles STT → echo detection → LLM streaming → chunked TTS → queue management → error recovery in one method. Extracting the LLM+TTS pipeline into its own class would solve the duplication with `retryLastMessage` and make cancellation/testing easier.
+
+For a v1.1 personal project, this is solid work. The issues above are ordered by impact — fixing the top 5 would make it production-ready.
