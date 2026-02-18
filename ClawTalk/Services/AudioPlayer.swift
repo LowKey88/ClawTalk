@@ -11,6 +11,7 @@ class AudioPlayer: NSObject, AVAudioPlayerDelegate {
     private var queue: [Data] = []
     private var queueCompletion: (() -> Void)?
     private var isQueueMode = false
+    private var isQueueFinished = false
     
     // MARK: - Single playback
     
@@ -24,6 +25,7 @@ class AudioPlayer: NSObject, AVAudioPlayerDelegate {
     
     func startQueue(completion: (() -> Void)? = nil) {
         isQueueMode = true
+        isQueueFinished = false
         queue.removeAll()
         queueCompletion = completion
     }
@@ -38,14 +40,17 @@ class AudioPlayer: NSObject, AVAudioPlayerDelegate {
     
     func finishQueue() {
         // Called when no more chunks will be added
-        // If nothing is playing and queue is empty, complete now
-        if !isPlaying && queue.isEmpty {
-            isQueueMode = false
-            DispatchQueue.main.async {
-                self.queueCompletion?()
-            }
-        }
-        // Otherwise, audioPlayerDidFinishPlaying will handle it
+        isQueueFinished = true
+        completeQueueIfDone()
+    }
+
+    /// Fires the queue completion callback only when all chunks have been
+    /// enqueued (isQueueFinished) AND fully played (!isPlaying && queue empty).
+    private func completeQueueIfDone() {
+        guard isQueueFinished && !isPlaying && queue.isEmpty else { return }
+        isQueueMode = false
+        isQueueFinished = false
+        queueCompletion?()
     }
     
     private func playNext() {
@@ -91,6 +96,7 @@ class AudioPlayer: NSObject, AVAudioPlayerDelegate {
         audioLevel = 0.0
         queue.removeAll()
         isQueueMode = false
+        isQueueFinished = false
     }
     
     func updateMeters() {
@@ -111,8 +117,7 @@ class AudioPlayer: NSObject, AVAudioPlayerDelegate {
                     self.playNext()
                 } else {
                     self.isPlaying = false
-                    self.isQueueMode = false
-                    self.queueCompletion?()
+                    self.completeQueueIfDone()
                 }
             } else {
                 self.isPlaying = false

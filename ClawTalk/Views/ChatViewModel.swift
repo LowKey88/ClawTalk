@@ -5,21 +5,30 @@ import SwiftUI
 actor TTSChunkQueue {
     private let elevenlabs: ElevenLabsService
     private let player: AudioPlayer
-    
+
     init(elevenlabs: ElevenLabsService, player: AudioPlayer) {
         self.elevenlabs = elevenlabs
         self.player = player
     }
-    
-    /// Each call waits for the previous one to finish before starting
+
+    /// Each call waits for the previous one to finish before starting.
+    /// Retries once on failure before dropping the chunk.
     func enqueue(text: String) async {
-        do {
-            let audioData = try await elevenlabs.synthesize(text: text)
-            await MainActor.run {
-                player.enqueue(data: audioData)
+        for attempt in 1...2 {
+            do {
+                let audioData = try await elevenlabs.synthesize(text: text)
+                await MainActor.run {
+                    player.enqueue(data: audioData)
+                }
+                return
+            } catch {
+                if attempt < 2 {
+                    print("TTS chunk failed (retrying): \(error)")
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                } else {
+                    print("TTS chunk failed permanently: \(error)")
+                }
             }
-        } catch {
-            print("TTS chunk failed: \(error)")
         }
     }
 }
@@ -87,6 +96,8 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
     
     private var currentProfileID: UUID?
     private var lastSpokenText: String = ""
+    private var pendingChunks = 0
+    private var streamingDone = false
     
     override init() {
         super.init()
@@ -276,13 +287,10 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
                     }
                 }
             }
-            
-            // Helper to send a chunk to TTS (serialized)
-            func speakChunk(_ text: String) {
-                Task {
-                    await ttsQueue.enqueue(text: text)
-                }
-            }
+
+            // Reset chunk tracking
+            pendingChunks = 0
+            streamingDone = false
             
             let fullResponse = try await openclaw.sendMessageStreaming(transcript) { [weak self] token in
                 Task { @MainActor in
@@ -311,11 +319,11 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
                             self.startSpeakingTimer()
                         }
                         
-                        speakChunk(trimmed)
+                        self.speakChunk(trimmed, via: ttsQueue)
                     }
                 }
             }
-            
+
             // Ensure final content is complete
             messages[messageIndex].content = fullResponse
             
@@ -334,19 +342,22 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
             
             lastSpokenText = fullResponse.lowercased()
             
-            // Speak any remaining text that wasn't chunked (serialized via queue)
+            // Speak any remaining text that wasn't chunked
             let remaining = String(fullResponse.dropFirst(spokenUpTo)).trimmingCharacters(in: .whitespacesAndNewlines)
             if !remaining.isEmpty {
                 if state != .speaking {
                     state = .speaking
                     startSpeakingTimer()
                 }
-                await ttsQueue.enqueue(text: remaining)
+                speakChunk(remaining, via: ttsQueue)
             }
-            
-            // Signal no more chunks
-            player.finishQueue()
-            
+
+            // Signal no more chunks will be added; finishQueue when all settle
+            streamingDone = true
+            if pendingChunks == 0 {
+                player.finishQueue()
+            }
+
         } catch {
             print("Error: \(error)")
             let errorMessage = ChatMessage(role: .assistant, content: "⚠️ \(error.localizedDescription)\nTap to retry", timestamp: Date(), isError: true)
@@ -360,6 +371,24 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
         }
     }
     
+    // MARK: - Chunk tracking
+
+    /// Send a text chunk to TTS, tracking completion for queue management.
+    /// Only calls finishQueue() once all chunks have settled and streaming is done.
+    private func speakChunk(_ text: String, via queue: TTSChunkQueue) {
+        pendingChunks += 1
+        Task { [weak self] in
+            await queue.enqueue(text: text)
+            await MainActor.run {
+                guard let self else { return }
+                self.pendingChunks -= 1
+                if self.pendingChunks == 0 && self.streamingDone {
+                    self.player.finishQueue()
+                }
+            }
+        }
+    }
+
     // MARK: - Skip TTS
     
     func skipSpeaking(settings: AppSettings) {
@@ -474,11 +503,11 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
                         self?.state = .idle
                     }
                 }
-                
-                func speakChunk(_ text: String) {
-                    Task { await ttsQueue.enqueue(text: text) }
-                }
-                
+
+                // Reset chunk tracking
+                pendingChunks = 0
+                streamingDone = false
+
                 let fullResponse = try await openclaw.sendMessageStreaming(transcript) { [weak self] token in
                     Task { @MainActor in
                         guard let self else { return }
@@ -502,13 +531,13 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
                                 self.state = .speaking
                                 self.startSpeakingTimer()
                             }
-                            speakChunk(trimmed)
+                            self.speakChunk(trimmed, via: ttsQueue)
                         }
                     }
                 }
-                
+
                 messages[messageIndex].content = fullResponse
-                
+
                 let trimmedResponse = fullResponse.trimmingCharacters(in: .whitespacesAndNewlines)
                 if trimmedResponse.isEmpty || trimmedResponse == "NO_REPLY" || trimmedResponse == "HEARTBEAT_OK" {
                     messages.remove(at: messageIndex)
@@ -524,9 +553,14 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
                         state = .speaking
                         startSpeakingTimer()
                     }
-                    await ttsQueue.enqueue(text: remaining)
+                    speakChunk(remaining, via: ttsQueue)
                 }
-                player.finishQueue()
+
+                // Signal no more chunks will be added; finishQueue when all settle
+                streamingDone = true
+                if pendingChunks == 0 {
+                    player.finishQueue()
+                }
                 
             } catch {
                 let errorMsg = ChatMessage(role: .assistant, content: "⚠️ \(error.localizedDescription)\nTap to retry", timestamp: Date(), isError: true)
