@@ -9,7 +9,7 @@ final class RealtimeTranscriptionService {
 
     private(set) var isConnected = false
 
-    private let endpoint = URL(string: "wss://api.openai.com/v1/realtime?model=gpt-4o-mini-transcribe")!
+    private let endpoint = URL(string: "wss://api.openai.com/v1/realtime?model=gpt-realtime-mini")!
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
