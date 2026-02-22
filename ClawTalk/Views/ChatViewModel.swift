@@ -72,7 +72,7 @@ enum ChatState {
 
 @Observable
 @MainActor
-class ChatViewModel: NSObject, AudioRecorderDelegate {
+class ChatViewModel {
     var messages: [ChatMessage] = [] {
         didSet { saveMessages() }
     }
@@ -94,11 +94,6 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
     private var pendingPushToTalkSettings: AppSettings?
     private var awaitingPushToTalkTranscript = false
     private var isHandsFreeCaptureActive = false
-
-    override init() {
-        super.init()
-        recorder.vadDelegate = self
-    }
 
     // MARK: - Profile switching
 
@@ -412,12 +407,6 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
         realtimeSTT.commitAudio()
     }
 
-    // MARK: - AudioRecorderDelegate (kept for fallback compatibility)
-
-    nonisolated func audioRecorderDidDetectSpeechStart() {}
-
-    nonisolated func audioRecorderDidDetectSpeechEnd(audioURL: URL) {}
-
     // MARK: - Transcript processing pipeline
 
     private func processTranscript(_ rawTranscript: String, settings: AppSettings, resumeListening: Bool = false) async {
@@ -432,7 +421,7 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
             return
         }
 
-        if WhisperService.isHallucination(transcript) {
+        if TranscriptionUtils.isHallucination(transcript) {
             if resumeListening {
                 startHandsFree(settings: settings)
             } else {

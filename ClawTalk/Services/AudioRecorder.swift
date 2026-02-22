@@ -1,16 +1,11 @@
 import Foundation
 import AVFoundation
 
-protocol AudioRecorderDelegate: AnyObject {
-    func audioRecorderDidDetectSpeechStart()
-    func audioRecorderDidDetectSpeechEnd(audioURL: URL)
-}
-
 class AudioRecorder: NSObject {
     var isRecording = false
     var audioLevel: Float = 0.0
     var onAudioChunk: ((Data) -> Void)?
-    weak var vadDelegate: AudioRecorderDelegate?
+    var onSpeechLevelUpdate: ((Float) -> Void)?
 
     /// Whether the current audio output route is a built-in speaker/receiver (echo-prone)
     var isUsingSpeaker: Bool {
@@ -246,6 +241,7 @@ class AudioRecorder: NSObject {
 
         DispatchQueue.main.async { [weak self] in
             self?.audioLevel = normalized
+            self?.onSpeechLevelUpdate?(normalized)
         }
     }
 

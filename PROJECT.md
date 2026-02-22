@@ -80,7 +80,7 @@ iPhone (ClawTalk App)
 | **LLM** | OpenClaw API (SSE streaming) | Normal token usage |
 | **TTS** | ElevenLabs eleven_turbo_v2_5 | ~$0.30/1000 chars |
 | **Voice** | Botopus (U7vsLCpbWl9Lt8M1Gjtk) | - |
-| **VAD** | Audio level monitoring (-25dB threshold) | Free (on-device) |
+| **VAD** | OpenAI Realtime server VAD + local level metering | Included in STT |
 
 ## Project Structure
 ```
@@ -97,9 +97,9 @@ ClawTalk/
 │   │   ├── WaveformView.swift         # Audio visualization
 │   │   └── SettingsView.swift         # Config screen
 │   ├── Services/
-│   │   ├── AudioRecorder.swift        # Mic capture + VAD
+│   │   ├── AudioRecorder.swift        # Mic capture + realtime PCM chunking
 │   │   ├── AudioPlayer.swift          # TTS playback
-│   │   ├── WhisperService.swift       # STT API + hallucination filter
+│   │   ├── WhisperService.swift       # Transcription utilities + hallucination filter
 │   │   ├── OpenClawService.swift      # Chat completions (REST + SSE)
 │   │   └── ElevenLabsService.swift    # TTS API
 │   ├── Models/
@@ -117,9 +117,9 @@ ClawTalk/
 - **Streaming:** SSE (stream: true)
 
 ## VAD Settings
-- Speech threshold: -25 dB
-- Silence timeout: 1.5 seconds
-- Min speech duration: 0.5 seconds
+- Server VAD: threshold 0.5
+- Prefix padding: 300ms
+- Silence duration: 600ms
 - Auto-resume listening after TTS playback
 
 ## Known Limitations
