@@ -1,6 +1,5 @@
 import Foundation
 import AVFoundation
-import Combine
 
 protocol AudioRecorderDelegate: AnyObject {
     func audioRecorderDidDetectSpeechStart()
@@ -10,37 +9,63 @@ protocol AudioRecorderDelegate: AnyObject {
 class AudioRecorder: NSObject {
     var isRecording = false
     var audioLevel: Float = 0.0
+    var onAudioChunk: ((Data) -> Void)?
     weak var vadDelegate: AudioRecorderDelegate?
-    
-    // VAD settings
-    private let speechThreshold: Float = -25.0   // dB threshold for speech
-    private let silenceTimeout: TimeInterval = 1.5 // seconds of silence to end
-    private let minSpeechDuration: TimeInterval = 0.3 // minimum speech to count
-    
+
     /// Whether the current audio output route is a built-in speaker/receiver (echo-prone)
     var isUsingSpeaker: Bool {
         let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
         return outputs.contains { $0.portType == .builtInSpeaker || $0.portType == .builtInReceiver }
     }
-    
-    private var audioRecorder: AVAudioRecorder?
-    private var levelTimer: DispatchSourceTimer?
-    private var isVADMode = false
-    private var isSpeechDetected = false
-    private var speechStartTime: Date?
-    private var lastSpeechTime: Date?
+
+    private let targetSampleRate: Double = 24_000
+    private let chunkDuration: Double = 0.10
+    private let chunkQueue = DispatchQueue(label: "com.clawtalk.audio.chunk")
+
+    private var audioEngine = AVAudioEngine()
+    private var converter: AVAudioConverter?
+    private var targetFormat: AVAudioFormat?
+    private var pcmChunkBuffer = Data()
     private var ignoreUntil: Date?
     private var silentPlayer: AVAudioPlayer?
-    
-    private var recordingURL: URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("clawtalk_recording.m4a")
-    }
-    
+
     override init() {
         super.init()
         setupAudioSession()
     }
-    
+
+    // MARK: - Public controls
+
+    func startRecording() {
+        startCapture()
+    }
+
+    func stopRecording() {
+        stopCapture()
+    }
+
+    func startListening() {
+        startSilentAudio()
+        startCapture()
+    }
+
+    /// Ignore audio chunks for a brief period (useful to avoid TTS echo pickup).
+    func setIgnorePeriod(_ seconds: TimeInterval) {
+        let adjusted = isUsingSpeaker ? seconds * 2.0 : seconds
+        chunkQueue.async { [weak self] in
+            self?.ignoreUntil = Date().addingTimeInterval(adjusted)
+            self?.pcmChunkBuffer.removeAll(keepingCapacity: true)
+        }
+        print("Echo ignore: \(adjusted)s (speaker: \(isUsingSpeaker))")
+    }
+
+    func stopListening() {
+        stopCapture()
+        stopSilentAudio()
+    }
+
+    // MARK: - Audio session
+
     private func setupAudioSession() {
         let session = AVAudioSession.sharedInstance()
         do {
@@ -50,12 +75,11 @@ class AudioRecorder: NSObject {
             print("Audio session setup failed: \(error)")
         }
     }
-    
+
     /// Check and prefer Bluetooth mic before each recording
     private func preferBluetoothMic() {
         let session = AVAudioSession.sharedInstance()
         if let inputs = session.availableInputs {
-            print("Available inputs: \(inputs.map { "\($0.portName) (\($0.portType.rawValue))" })")
             if let btInput = inputs.first(where: {
                 $0.portType == .bluetoothHFP || $0.portType == .bluetoothLE || $0.portType == .bluetoothA2DP
             }) {
@@ -68,68 +92,173 @@ class AudioRecorder: NSObject {
             }
         }
     }
-    
-    // MARK: - Push-to-talk mode
-    
-    func startRecording() {
-        isVADMode = false
-        beginRecording()
-    }
-    
-    func stopRecording() -> URL? {
-        stopMonitoring()
-        audioRecorder?.stop()
-        isRecording = false
-        audioLevel = 0.0
-        
-        guard FileManager.default.fileExists(atPath: recordingURL.path) else {
-            return nil
+
+    // MARK: - Capture pipeline
+
+    private func startCapture() {
+        if isRecording { return }
+
+        preferBluetoothMic()
+
+        audioEngine.stop()
+        audioEngine.reset()
+        audioEngine = AVAudioEngine()
+
+        let inputNode = audioEngine.inputNode
+        let inputFormat = inputNode.outputFormat(forBus: 0)
+
+        guard let targetFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: targetSampleRate, channels: 1, interleaved: false),
+              let converter = AVAudioConverter(from: inputFormat, to: targetFormat) else {
+            print("Failed to create audio converter")
+            return
         }
-        return recordingURL
+
+        self.targetFormat = targetFormat
+        self.converter = converter
+
+        pcmChunkBuffer.removeAll(keepingCapacity: true)
+
+        inputNode.removeTap(onBus: 0)
+        inputNode.installTap(onBus: 0, bufferSize: 2048, format: inputFormat) { [weak self] buffer, _ in
+            self?.handleInputBuffer(buffer)
+        }
+
+        do {
+            audioEngine.prepare()
+            try audioEngine.start()
+            isRecording = true
+        } catch {
+            inputNode.removeTap(onBus: 0)
+            print("Audio engine start failed: \(error)")
+        }
     }
-    
-    // MARK: - VAD (hands-free) mode
-    
-    func startListening() {
-        isVADMode = true
-        isSpeechDetected = false
-        speechStartTime = nil
-        lastSpeechTime = nil
-        startSilentAudio()
-        beginRecording()
-    }
-    
-    /// Ignore VAD input for a brief period (avoids TTS echo pickup).
-    /// Automatically extends the period when using built-in speaker (more echo-prone).
-    func setIgnorePeriod(_ seconds: TimeInterval) {
-        let adjusted = isUsingSpeaker ? seconds * 2.0 : seconds
-        ignoreUntil = Date().addingTimeInterval(adjusted)
-        // Reset any in-progress speech detection
-        isSpeechDetected = false
-        speechStartTime = nil
-        lastSpeechTime = nil
-        print("Echo ignore: \(adjusted)s (speaker: \(isUsingSpeaker))")
-    }
-    
-    func stopListening() {
-        isVADMode = false
-        isSpeechDetected = false
-        stopMonitoring()
-        audioRecorder?.stop()
-        stopSilentAudio()
+
+    private func stopCapture() {
+        guard isRecording else {
+            audioLevel = 0.0
+            return
+        }
+
+        audioEngine.inputNode.removeTap(onBus: 0)
+        audioEngine.stop()
+        audioEngine.reset()
+
+        flushRemainingChunk()
+
+        converter = nil
+        targetFormat = nil
         isRecording = false
         audioLevel = 0.0
     }
-    
+
+    private func handleInputBuffer(_ buffer: AVAudioPCMBuffer) {
+        updateAudioLevel(from: buffer)
+
+        guard let converter,
+              let targetFormat else {
+            return
+        }
+
+        let ratio = targetSampleRate / buffer.format.sampleRate
+        let outputFrameCapacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 256
+
+        guard let convertedBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outputFrameCapacity) else {
+            return
+        }
+
+        var didProvideInput = false
+        var error: NSError?
+
+        let status = converter.convert(to: convertedBuffer, error: &error) { _, outStatus in
+            if didProvideInput {
+                outStatus.pointee = .noDataNow
+                return nil
+            }
+
+            didProvideInput = true
+            outStatus.pointee = .haveData
+            return buffer
+        }
+
+        if status == .error {
+            if let error {
+                print("Audio convert failed: \(error)")
+            }
+            return
+        }
+
+        guard convertedBuffer.frameLength > 0,
+              let channelData = convertedBuffer.int16ChannelData else {
+            return
+        }
+
+        let byteCount = Int(convertedBuffer.frameLength) * MemoryLayout<Int16>.size
+        let pcmData = Data(bytes: channelData[0], count: byteCount)
+
+        chunkQueue.async { [weak self] in
+            self?.appendPCMData(pcmData)
+        }
+    }
+
+    private func appendPCMData(_ data: Data) {
+        let now = Date()
+        if let ignoreUntil, now < ignoreUntil {
+            pcmChunkBuffer.removeAll(keepingCapacity: true)
+            return
+        }
+        ignoreUntil = nil
+
+        pcmChunkBuffer.append(data)
+        let chunkSizeBytes = Int(targetSampleRate * chunkDuration) * MemoryLayout<Int16>.size
+
+        while pcmChunkBuffer.count >= chunkSizeBytes {
+            let chunk = Data(pcmChunkBuffer.prefix(chunkSizeBytes))
+            pcmChunkBuffer.removeFirst(chunkSizeBytes)
+            onAudioChunk?(chunk)
+        }
+    }
+
+    private func flushRemainingChunk() {
+        chunkQueue.sync {
+            guard !pcmChunkBuffer.isEmpty else { return }
+            onAudioChunk?(pcmChunkBuffer)
+            pcmChunkBuffer.removeAll(keepingCapacity: true)
+        }
+    }
+
+    private func updateAudioLevel(from buffer: AVAudioPCMBuffer) {
+        guard let channelData = buffer.floatChannelData?[0] else {
+            return
+        }
+
+        let frameCount = Int(buffer.frameLength)
+        guard frameCount > 0 else { return }
+
+        var sumSquares: Float = 0
+        for i in 0..<frameCount {
+            let sample = channelData[i]
+            sumSquares += sample * sample
+        }
+
+        let rms = sqrt(sumSquares / Float(frameCount))
+        let db = 20 * log10(max(rms, 0.000_01))
+        let normalized = max(0, min(1, (db + 50) / 50))
+
+        DispatchQueue.main.async { [weak self] in
+            self?.audioLevel = normalized
+        }
+    }
+
     // MARK: - Silent audio (keeps app alive in background)
-    
+
     private func startSilentAudio() {
         guard silentPlayer == nil else { return }
-        let sampleRate: Double = 16000
-        let numSamples = Int(sampleRate) // 1 second
+
+        let sampleRate: Double = 16_000
+        let numSamples = Int(sampleRate)
         let dataSize = numSamples * 2
         let fileSize = 44 + dataSize
-        
+
         var data = Data()
         data.append(contentsOf: "RIFF".utf8)
         data.append(contentsOf: withUnsafeBytes(of: UInt32(fileSize - 8).littleEndian) { Array($0) })
@@ -138,119 +267,27 @@ class AudioRecorder: NSObject {
         data.append(contentsOf: withUnsafeBytes(of: UInt32(16).littleEndian) { Array($0) })
         data.append(contentsOf: withUnsafeBytes(of: UInt16(1).littleEndian) { Array($0) })
         data.append(contentsOf: withUnsafeBytes(of: UInt16(1).littleEndian) { Array($0) })
-        data.append(contentsOf: withUnsafeBytes(of: UInt32(16000).littleEndian) { Array($0) })
-        data.append(contentsOf: withUnsafeBytes(of: UInt32(32000).littleEndian) { Array($0) })
+        data.append(contentsOf: withUnsafeBytes(of: UInt32(16_000).littleEndian) { Array($0) })
+        data.append(contentsOf: withUnsafeBytes(of: UInt32(32_000).littleEndian) { Array($0) })
         data.append(contentsOf: withUnsafeBytes(of: UInt16(2).littleEndian) { Array($0) })
         data.append(contentsOf: withUnsafeBytes(of: UInt16(16).littleEndian) { Array($0) })
         data.append(contentsOf: "data".utf8)
         data.append(contentsOf: withUnsafeBytes(of: UInt32(dataSize).littleEndian) { Array($0) })
         data.append(Data(count: dataSize))
-        
+
         do {
             silentPlayer = try AVAudioPlayer(data: data)
             silentPlayer?.numberOfLoops = -1
             silentPlayer?.volume = 0.05
             silentPlayer?.prepareToPlay()
             silentPlayer?.play()
-            print("Silent audio keepalive started")
         } catch {
             print("Silent audio failed: \(error)")
         }
     }
-    
+
     private func stopSilentAudio() {
         silentPlayer?.stop()
         silentPlayer = nil
-    }
-    
-    // MARK: - Private
-    
-    private func beginRecording() {
-        preferBluetoothMic()
-        let settings: [String: Any] = [
-            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-            AVSampleRateKey: 16000,
-            AVNumberOfChannelsKey: 1,
-            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
-        ]
-        
-        do {
-            try? FileManager.default.removeItem(at: recordingURL)
-            
-            audioRecorder = try AVAudioRecorder(url: recordingURL, settings: settings)
-            audioRecorder?.isMeteringEnabled = true
-            audioRecorder?.record()
-            isRecording = true
-            
-            let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .userInteractive))
-            timer.schedule(deadline: .now(), repeating: 0.05)
-            timer.setEventHandler { [weak self] in
-                self?.updateMeters()
-            }
-            timer.resume()
-            levelTimer = timer
-        } catch {
-            print("Recording failed: \(error)")
-        }
-    }
-    
-    private func stopMonitoring() {
-        levelTimer?.cancel()
-        levelTimer = nil
-    }
-    
-    private func updateMeters() {
-        audioRecorder?.updateMeters()
-        let level = audioRecorder?.averagePower(forChannel: 0) ?? -160
-        let normalized = max(0, (level + 50) / 50)
-        audioLevel = normalized
-        
-        guard isVADMode else { return }
-        
-        let now = Date()
-        
-        // Ignore period after TTS to avoid echo
-        if let ignoreUntil, now < ignoreUntil { return }
-        ignoreUntil = nil
-        
-        // Use higher threshold on speaker to filter echo remnants
-        let effectiveThreshold = isUsingSpeaker ? speechThreshold + 5.0 : speechThreshold
-        
-        if level > effectiveThreshold {
-            // Speech detected
-            lastSpeechTime = now
-            
-            if !isSpeechDetected {
-                isSpeechDetected = true
-                speechStartTime = now
-                vadDelegate?.audioRecorderDidDetectSpeechStart()
-            }
-        } else if isSpeechDetected, let lastSpeech = lastSpeechTime {
-            // Silence after speech - check timeout
-            let silenceDuration = now.timeIntervalSince(lastSpeech)
-            
-            if silenceDuration >= silenceTimeout {
-                // Check minimum speech duration
-                let speechDuration = lastSpeech.timeIntervalSince(speechStartTime ?? lastSpeech)
-                
-                if speechDuration >= minSpeechDuration {
-                    // Speech ended - stop and deliver
-                    isSpeechDetected = false
-                    stopMonitoring()
-                    audioRecorder?.stop()
-                    isRecording = false
-                    audioLevel = 0.0
-                    
-                    if FileManager.default.fileExists(atPath: recordingURL.path) {
-                        vadDelegate?.audioRecorderDidDetectSpeechEnd(audioURL: recordingURL)
-                    }
-                } else {
-                    // Too short, reset
-                    isSpeechDetected = false
-                    speechStartTime = nil
-                    lastSpeechTime = nil
-                }
-            }
-        }
     }
 }

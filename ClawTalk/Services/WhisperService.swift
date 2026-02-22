@@ -53,7 +53,7 @@ class WhisperService {
     }
     
     /// Detect common Whisper hallucination patterns
-    private static func isHallucination(_ text: String) -> Bool {
+    static func isHallucination(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         
         // Too short

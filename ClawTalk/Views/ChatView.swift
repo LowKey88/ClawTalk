@@ -170,6 +170,16 @@ struct ChatView: View {
                             .frame(height: 40)
                             .padding(.horizontal)
                     }
+
+                    if (viewModel.state == .recording || viewModel.state == .listening || viewModel.state == .transcribing),
+                       !viewModel.liveTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text(viewModel.liveTranscript)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 20)
+                    }
                     
                     // Mic button
                     HStack {
@@ -199,7 +209,7 @@ struct ChatView: View {
                                            viewModel.state == .thinking ||
                                            viewModel.state == .streaming ||
                                            viewModel.state == .speaking,
-                                onPress: { viewModel.startRecording() },
+                                onPress: { viewModel.startRecording(settings: settings) },
                                 onRelease: { viewModel.stopAndProcess(settings: settings) }
                             )
                         }
@@ -243,6 +253,7 @@ struct ChatView: View {
             }
             .onAppear {
                 viewModel.switchToProfile(settings.activeProfileID)
+                viewModel.prepareRealtime(settings: settings)
                 checkServerStatus()
             }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
@@ -258,7 +269,11 @@ struct ChatView: View {
                 // Stop any active recording/listening before switching
                 viewModel.stopHandsFree()
                 viewModel.switchToProfile(newID)
+                viewModel.prepareRealtime(settings: settings)
                 checkServerStatus()
+            }
+            .onChange(of: settings.openaiAPIKey) { _, _ in
+                viewModel.prepareRealtime(settings: settings)
             }
         }
     }
