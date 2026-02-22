@@ -213,8 +213,8 @@ final class RealtimeTranscriptionService {
     private func notifyEventWaiters(for eventType: String) {
         let waiters: [CheckedContinuation<Void, Error>] = eventStateQueue.sync { () -> [CheckedContinuation<Void, Error>] in
             seenEventTypes.insert(eventType)
-            let eventWaiters = self.eventWaiters.removeValue(forKey: eventType)?.values ?? []
-            return Array(eventWaiters)
+            let dict = self.eventWaiters.removeValue(forKey: eventType) ?? [:]
+            return Array(dict.values)
         }
 
         for waiter in waiters {
