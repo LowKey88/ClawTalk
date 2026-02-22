@@ -18,12 +18,16 @@ final class RealtimeTranscriptionService {
     private var receiveTask: Task<Void, Never>?
     private var isDisconnecting = false
     private var currentTranscript = ""
+    private let eventStateQueue = DispatchQueue(label: "com.clawtalk.realtime.event-state")
+    private var seenEventTypes = Set<String>()
+    private var eventWaiters: [String: [UUID: CheckedContinuation<Void, Error>]] = [:]
 
     func connect(apiKey: String) async throws {
         if isConnected { return }
         if webSocketTask != nil || session != nil || receiveTask != nil {
             disconnect()
         }
+        resetEventState()
 
         var request = URLRequest(url: endpoint)
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
@@ -36,11 +40,13 @@ final class RealtimeTranscriptionService {
         self.webSocketTask = task
         self.isDisconnecting = false
         task.resume()
+        startReceiveLoop()
 
         do {
+            try await waitForEvent("session.created", timeout: 10)
             try await sendNow(SessionUpdateEvent.defaultTranscription)
+            try await waitForEvent("session.updated", timeout: 10)
             isConnected = true
-            startReceiveLoop()
         } catch {
             disconnect()
             throw error
@@ -62,6 +68,8 @@ final class RealtimeTranscriptionService {
         isDisconnecting = true
         isConnected = false
         currentTranscript = ""
+        failAllEventWaiters(with: RealtimeTranscriptionError.notConnected)
+        resetEventState()
 
         receiveTask?.cancel()
         receiveTask = nil
@@ -90,6 +98,7 @@ final class RealtimeTranscriptionService {
                     if Task.isCancelled || self.isDisconnecting {
                         return
                     }
+                    self.failAllEventWaiters(with: error)
                     self.disconnect()
                     self.emitError(error)
                     return
@@ -113,6 +122,7 @@ final class RealtimeTranscriptionService {
         guard let event = try? decoder.decode(RealtimeEvent.self, from: data) else {
             return
         }
+        notifyEventWaiters(for: event.type)
 
         switch event.type {
         case "conversation.item.input_audio_transcription.delta":
@@ -134,10 +144,100 @@ final class RealtimeTranscriptionService {
 
         case "error":
             let message = event.error?.message ?? "Realtime transcription error"
-            emitError(RealtimeTranscriptionError.server(message))
+            let serverError = RealtimeTranscriptionError.server(message)
+            failAllEventWaiters(with: serverError)
+            emitError(serverError)
 
         default:
             break
+        }
+    }
+
+    private func waitForEvent(_ eventType: String, timeout: TimeInterval) async throws {
+        let waiterID = UUID()
+        let timeoutNanoseconds = UInt64(timeout * 1_000_000_000)
+        var timeoutTask: Task<Void, Never>?
+
+        do {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                if registerEventWaiter(continuation, for: eventType, id: waiterID) {
+                    continuation.resume(returning: ())
+                    return
+                }
+
+                timeoutTask = Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: timeoutNanoseconds)
+                    guard let self else { return }
+                    if let waiter = self.removeEventWaiter(for: eventType, id: waiterID) {
+                        waiter.resume(throwing: RealtimeTranscriptionError.timeout)
+                    }
+                }
+            }
+            timeoutTask?.cancel()
+        } catch {
+            timeoutTask?.cancel()
+            throw error
+        }
+    }
+
+    private func registerEventWaiter(
+        _ continuation: CheckedContinuation<Void, Error>,
+        for eventType: String,
+        id: UUID
+    ) -> Bool {
+        eventStateQueue.sync {
+            if seenEventTypes.contains(eventType) {
+                return true
+            }
+
+            var waiters = eventWaiters[eventType] ?? [:]
+            waiters[id] = continuation
+            eventWaiters[eventType] = waiters
+            return false
+        }
+    }
+
+    private func removeEventWaiter(for eventType: String, id: UUID) -> CheckedContinuation<Void, Error>? {
+        eventStateQueue.sync {
+            guard var waiters = eventWaiters[eventType] else { return nil }
+            let waiter = waiters.removeValue(forKey: id)
+            if waiters.isEmpty {
+                eventWaiters.removeValue(forKey: eventType)
+            } else {
+                eventWaiters[eventType] = waiters
+            }
+            return waiter
+        }
+    }
+
+    private func notifyEventWaiters(for eventType: String) {
+        let waiters: [CheckedContinuation<Void, Error>] = eventStateQueue.sync {
+            seenEventTypes.insert(eventType)
+            let eventWaiters = self.eventWaiters.removeValue(forKey: eventType)?.values ?? []
+            return Array(eventWaiters)
+        }
+
+        for waiter in waiters {
+            waiter.resume(returning: ())
+        }
+    }
+
+    private func failAllEventWaiters(with error: Error) {
+        let waiters: [CheckedContinuation<Void, Error>] = eventStateQueue.sync {
+            let waiters = eventWaiters.values.flatMap(\.values)
+            eventWaiters.removeAll()
+            return Array(waiters)
+        }
+
+        for waiter in waiters {
+            waiter.resume(throwing: error)
+        }
+    }
+
+    private func resetEventState() {
+        eventStateQueue.sync {
+            seenEventTypes.removeAll()
+            eventWaiters.removeAll()
         }
     }
 
@@ -172,12 +272,15 @@ final class RealtimeTranscriptionService {
 
 private enum RealtimeTranscriptionError: LocalizedError {
     case notConnected
+    case timeout
     case server(String)
 
     var errorDescription: String? {
         switch self {
         case .notConnected:
             return "Realtime transcription is not connected"
+        case .timeout:
+            return "Timed out waiting for realtime transcription session setup"
         case .server(let message):
             return message
         }

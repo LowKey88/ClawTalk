@@ -206,9 +206,7 @@ class ChatViewModel {
 
     private func startStreamingAudio(handsFree: Bool) {
         recorder.onAudioChunk = { [weak self] chunk in
-            Task { @MainActor in
-                self?.realtimeSTT?.appendAudio(chunk)
-            }
+            self?.realtimeSTT?.appendAudio(chunk)
         }
 
         liveTranscript = ""
