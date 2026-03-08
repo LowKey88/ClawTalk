@@ -276,6 +276,10 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
     }
     
     private func processAudio(audioURL: URL, settings: AppSettings, resumeListening: Bool = false, pipelineID: UUID) async {
+        defer {
+            try? FileManager.default.removeItem(at: audioURL)
+        }
+
         // Step 1: STT
         state = .transcribing
         let whisper = WhisperService(apiKey: settings.openaiAPIKey)

@@ -32,9 +32,7 @@ class AudioRecorder: NSObject {
     private var ignoreUntil: Date?
     private var silentPlayer: AVAudioPlayer?
     
-    private var recordingURL: URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("clawtalk_recording.m4a")
-    }
+    private var currentRecordingURL: URL?
     
     override init() {
         super.init()
@@ -82,10 +80,14 @@ class AudioRecorder: NSObject {
         isRecording = false
         audioLevel = 0.0
         
-        guard FileManager.default.fileExists(atPath: recordingURL.path) else {
+        let completedURL = currentRecordingURL
+        currentRecordingURL = nil
+        
+        guard let completedURL,
+              FileManager.default.fileExists(atPath: completedURL.path) else {
             return nil
         }
-        return recordingURL
+        return completedURL
     }
     
     // MARK: - VAD (hands-free) mode
@@ -119,6 +121,11 @@ class AudioRecorder: NSObject {
         stopSilentAudio()
         isRecording = false
         audioLevel = 0.0
+        
+        if let currentRecordingURL {
+            try? FileManager.default.removeItem(at: currentRecordingURL)
+            self.currentRecordingURL = nil
+        }
     }
     
     // MARK: - Silent audio (keeps app alive in background)
@@ -175,14 +182,16 @@ class AudioRecorder: NSObject {
         ]
         
         do {
-            try? FileManager.default.removeItem(at: recordingURL)
+            let recordingURL = makeRecordingURL()
+            currentRecordingURL = recordingURL
             
             audioRecorder = try AVAudioRecorder(url: recordingURL, settings: settings)
             audioRecorder?.isMeteringEnabled = true
             audioRecorder?.record()
             isRecording = true
             
-            let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .userInteractive))
+            // Keep meter updates on the main queue so recording state stays on one thread.
+            let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.main)
             timer.schedule(deadline: .now(), repeating: 0.05)
             timer.setEventHandler { [weak self] in
                 self?.updateMeters()
@@ -190,8 +199,15 @@ class AudioRecorder: NSObject {
             timer.resume()
             levelTimer = timer
         } catch {
+            currentRecordingURL = nil
             print("Recording failed: \(error)")
         }
+    }
+    
+    private func makeRecordingURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("clawtalk_recording_\(UUID().uuidString)")
+            .appendingPathExtension("m4a")
     }
     
     private func stopMonitoring() {
@@ -241,8 +257,12 @@ class AudioRecorder: NSObject {
                     isRecording = false
                     audioLevel = 0.0
                     
-                    if FileManager.default.fileExists(atPath: recordingURL.path) {
-                        vadDelegate?.audioRecorderDidDetectSpeechEnd(audioURL: recordingURL)
+                    let completedURL = currentRecordingURL
+                    currentRecordingURL = nil
+                    
+                    if let completedURL,
+                       FileManager.default.fileExists(atPath: completedURL.path) {
+                        vadDelegate?.audioRecorderDidDetectSpeechEnd(audioURL: completedURL)
                     }
                 } else {
                     // Too short, reset
