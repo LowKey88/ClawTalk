@@ -247,6 +247,16 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
             throw CancellationError()
         }
     }
+
+    private func assistantMessageIndex(for messageID: UUID, pipelineID: UUID) throws -> Int {
+        try ensurePipelineIsActive(pipelineID)
+
+        guard let messageIndex = messages.firstIndex(where: { $0.id == messageID }) else {
+            throw CancellationError()
+        }
+
+        return messageIndex
+    }
     
     private func finishPipeline(_ pipelineID: UUID, settings: AppSettings? = nil, resumeListening: Bool = false, applyIgnorePeriod: Bool = false) {
         guard currentPipelineID == pipelineID else { return }
@@ -316,7 +326,7 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
         let openclaw = OpenClawService(baseURL: settings.openclawURL, token: settings.gatewayToken)
         let assistantMessage = ChatMessage(role: .assistant, content: "", timestamp: Date())
         messages.append(assistantMessage)
-        let messageIndex = messages.count - 1
+        let assistantMessageID = assistantMessage.id
         
         let elevenlabs = ElevenLabsService(apiKey: settings.elevenlabsAPIKey, voiceID: settings.selectedVoiceID)
         let ttsQueue = TTSChunkQueue(elevenlabs: elevenlabs, player: player)
@@ -348,7 +358,8 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
                 self.state = .streaming
                 firstToken = false
             }
-            
+
+            let messageIndex = try self.assistantMessageIndex(for: assistantMessageID, pipelineID: pipelineID)
             self.messages[messageIndex].content += token
             sentenceBuffer += token
             
@@ -374,10 +385,12 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
         }
         
         try ensurePipelineIsActive(pipelineID)
+        let messageIndex = try assistantMessageIndex(for: assistantMessageID, pipelineID: pipelineID)
         messages[messageIndex].content = fullResponse
         
         let trimmedResponse = fullResponse.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedResponse.isEmpty || trimmedResponse == "NO_REPLY" || trimmedResponse == "HEARTBEAT_OK" {
+            let messageIndex = try assistantMessageIndex(for: assistantMessageID, pipelineID: pipelineID)
             messages.remove(at: messageIndex)
             player.stop()
             finishPipeline(pipelineID, settings: settings, resumeListening: resumeListening)
