@@ -236,7 +236,7 @@ struct ChatView: View {
             .alert("New Conversation", isPresented: $showClearConfirm) {
                 Button("Cancel", role: .cancel) {}
                 Button("Clear", role: .destructive) {
-                    viewModel.clearChat()
+                    viewModel.clearChat(settings: settings)
                 }
             } message: {
                 Text("Start a new conversation? Current messages will be cleared.")

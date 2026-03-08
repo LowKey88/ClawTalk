@@ -11,8 +11,9 @@ struct BotProfile: Identifiable, Codable, Hashable {
     var gatewayToken: String
     var voiceID: String
     var voiceName: String
+    var conversationID: UUID
     
-    init(id: UUID = UUID(), name: String = "", emoji: String = "🤖", openclawURL: String = "", gatewayToken: String = "", voiceID: String = "", voiceName: String = "Default") {
+    init(id: UUID = UUID(), name: String = "", emoji: String = "🤖", openclawURL: String = "", gatewayToken: String = "", voiceID: String = "", voiceName: String = "Default", conversationID: UUID = UUID()) {
         self.id = id
         self.name = name
         self.emoji = emoji
@@ -20,10 +21,54 @@ struct BotProfile: Identifiable, Codable, Hashable {
         self.gatewayToken = gatewayToken
         self.voiceID = voiceID
         self.voiceName = voiceName
+        self.conversationID = conversationID
     }
     
     var isConfigured: Bool {
         !openclawURL.isEmpty && !gatewayToken.isEmpty && !name.isEmpty
+    }
+    
+    var sessionKey: String {
+        "agent:clawtalk:\(id.uuidString):\(conversationID.uuidString)"
+    }
+    
+    var userID: String {
+        "clawtalk-\(id.uuidString.lowercased())"
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case emoji
+        case openclawURL
+        case gatewayToken
+        case voiceID
+        case voiceName
+        case conversationID
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        emoji = try container.decode(String.self, forKey: .emoji)
+        openclawURL = try container.decode(String.self, forKey: .openclawURL)
+        gatewayToken = try container.decode(String.self, forKey: .gatewayToken)
+        voiceID = try container.decode(String.self, forKey: .voiceID)
+        voiceName = try container.decode(String.self, forKey: .voiceName)
+        conversationID = try container.decodeIfPresent(UUID.self, forKey: .conversationID) ?? UUID()
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(emoji, forKey: .emoji)
+        try container.encode(openclawURL, forKey: .openclawURL)
+        try container.encode(gatewayToken, forKey: .gatewayToken)
+        try container.encode(voiceID, forKey: .voiceID)
+        try container.encode(voiceName, forKey: .voiceName)
+        try container.encode(conversationID, forKey: .conversationID)
     }
 }
 
@@ -110,6 +155,8 @@ class AppSettings {
     var gatewayToken: String { activeProfile?.gatewayToken ?? "" }
     var selectedVoiceID: String { activeProfile?.voiceID ?? "" }
     var selectedVoiceName: String { activeProfile?.voiceName ?? "Default" }
+    var activeSessionKey: String { activeProfile?.sessionKey ?? "agent:clawtalk:default" }
+    var activeUserID: String { activeProfile?.userID ?? "clawtalk-anonymous" }
     
     var isConfigured: Bool {
         guard let profile = activeProfile else {
@@ -156,6 +203,18 @@ class AppSettings {
     
     func setActiveProfile(_ id: UUID) {
         activeProfileID = id
+    }
+    
+    func resetConversation(for id: UUID) {
+        var list = profiles
+        guard let index = list.firstIndex(where: { $0.id == id }) else { return }
+        list[index].conversationID = UUID()
+        profiles = list
+    }
+    
+    func resetActiveConversation() {
+        guard let activeProfileID else { return }
+        resetConversation(for: activeProfileID)
     }
     
     // MARK: Migration from old single-profile settings
