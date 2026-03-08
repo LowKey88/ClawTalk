@@ -190,7 +190,8 @@ class AudioRecorder: NSObject {
             audioRecorder?.record()
             isRecording = true
             
-            let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .userInteractive))
+            // Keep meter updates on the main queue so recording state stays on one thread.
+            let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.main)
             timer.schedule(deadline: .now(), repeating: 0.05)
             timer.setEventHandler { [weak self] in
                 self?.updateMeters()
