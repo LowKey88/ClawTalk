@@ -12,7 +12,7 @@ class OpenClawService {
     
     // MARK: - Streaming response
     
-    func sendMessageStreaming(_ text: String, onToken: @escaping (String) -> Void) async throws -> String {
+    func sendMessageStreaming(_ text: String, onToken: @escaping @MainActor @Sendable (String) async throws -> Void) async throws -> String {
         let url = URL(string: "\(baseURL)/v1/chat/completions")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -49,6 +49,8 @@ class OpenClawService {
         var fullContent = ""
         
         for try await line in bytes.lines {
+            try Task.checkCancellation()
+            
             // SSE format: "data: {...}" or "data: [DONE]"
             guard line.hasPrefix("data: ") else { continue }
             let jsonString = String(line.dropFirst(6))
@@ -62,7 +64,7 @@ class OpenClawService {
             }
             
             fullContent += delta
-            onToken(delta)
+            try await onToken(delta)
         }
         
         if fullContent.isEmpty {
