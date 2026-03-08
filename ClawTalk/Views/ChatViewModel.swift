@@ -13,11 +13,17 @@ actor TTSChunkQueue {
     
     /// Each call waits for the previous one to finish before starting
     func enqueue(text: String) async {
+        guard !Task.isCancelled else { return }
+        
         do {
             let audioData = try await elevenlabs.synthesize(text: text)
+            guard !Task.isCancelled else { return }
+            
             await MainActor.run {
                 player.enqueue(data: audioData)
             }
+        } catch is CancellationError {
+            return
         } catch {
             print("TTS chunk failed: \(error)")
         }
@@ -87,6 +93,8 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
     
     private var currentProfileID: UUID?
     private var lastSpokenText: String = ""
+    private var currentPipelineTask: Task<Void, Never>?
+    private var currentPipelineID: UUID?
     
     override init() {
         super.init()
@@ -97,7 +105,9 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
     
     func switchToProfile(_ profileID: UUID?) {
         guard profileID != currentProfileID else { return }
+        stopAll()
         currentProfileID = profileID
+        lastSpokenText = ""
         loadMessages()
     }
     
@@ -140,8 +150,8 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
             return
         }
         
-        Task {
-            await processAudio(audioURL: audioURL, settings: settings)
+        startPipeline { [weak self] pipelineID in
+            await self?.processAudio(audioURL: audioURL, settings: settings, pipelineID: pipelineID)
         }
     }
     
@@ -155,6 +165,9 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
     }
     
     func stopHandsFree() {
+        cancelCurrentPipeline()
+        player.stop()
+        stopSpeakingTimer()
         pendingSettings = nil
         stopLevelTimer()
         recorder.stopListening()
@@ -163,6 +176,7 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
     
     /// Stop everything - cancel any active operation
     func stopAll() {
+        cancelCurrentPipeline()
         player.stop()
         stopSpeakingTimer()
         stopLevelTimer()
@@ -179,8 +193,8 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
             return
         }
         
-        Task {
-            await processAudio(audioURL: audioURL, settings: settings, resumeListening: true)
+        startPipeline { [weak self] pipelineID in
+            await self?.processAudio(audioURL: audioURL, settings: settings, resumeListening: true, pipelineID: pipelineID)
         }
     }
     
@@ -200,41 +214,90 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
                 state = .idle
                 return
             }
-            await processAudio(audioURL: audioURL, settings: settings, resumeListening: true)
+            startPipeline { [weak self] pipelineID in
+                await self?.processAudio(audioURL: audioURL, settings: settings, resumeListening: true, pipelineID: pipelineID)
+            }
         }
     }
     
     // MARK: - Audio processing pipeline
     
-    private func processAudio(audioURL: URL, settings: AppSettings, resumeListening: Bool = false) async {
+    private func startPipeline(_ operation: @escaping @MainActor (UUID) async -> Void) {
+        cancelCurrentPipeline()
+        
+        let pipelineID = UUID()
+        currentPipelineID = pipelineID
+        currentPipelineTask = Task { [weak self] in
+            await operation(pipelineID)
+            await MainActor.run {
+                guard let self, self.currentPipelineID == pipelineID else { return }
+                self.currentPipelineTask = nil
+            }
+        }
+    }
+    
+    private func cancelCurrentPipeline() {
+        currentPipelineTask?.cancel()
+        currentPipelineTask = nil
+        currentPipelineID = nil
+    }
+    
+    private func ensurePipelineIsActive(_ pipelineID: UUID) throws {
+        if Task.isCancelled || currentPipelineID != pipelineID {
+            throw CancellationError()
+        }
+    }
+
+    private func assistantMessageIndex(for messageID: UUID, pipelineID: UUID) throws -> Int {
+        try ensurePipelineIsActive(pipelineID)
+
+        guard let messageIndex = messages.firstIndex(where: { $0.id == messageID }) else {
+            throw CancellationError()
+        }
+
+        return messageIndex
+    }
+    
+    private func finishPipeline(_ pipelineID: UUID, settings: AppSettings? = nil, resumeListening: Bool = false, applyIgnorePeriod: Bool = false) {
+        guard currentPipelineID == pipelineID else { return }
+        
+        currentPipelineID = nil
+        currentPipelineTask = nil
+        stopSpeakingTimer()
+        
+        if resumeListening, let settings, settings.isHandsFree {
+            if applyIgnorePeriod {
+                recorder.setIgnorePeriod(1.5)
+            }
+            startHandsFree(settings: settings)
+        } else {
+            state = .idle
+        }
+    }
+    
+    private func processAudio(audioURL: URL, settings: AppSettings, resumeListening: Bool = false, pipelineID: UUID) async {
         defer {
             try? FileManager.default.removeItem(at: audioURL)
         }
-        
+
         // Step 1: STT
         state = .transcribing
         let whisper = WhisperService(apiKey: settings.openaiAPIKey)
         
         do {
+            try ensurePipelineIsActive(pipelineID)
             let transcript = try await whisper.transcribe(audioURL: audioURL)
+            try ensurePipelineIsActive(pipelineID)
             
             guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                if resumeListening {
-                    startHandsFree(settings: settings)
-                } else {
-                    state = .idle
-                }
+                finishPipeline(pipelineID, settings: settings, resumeListening: resumeListening)
                 return
             }
             
             // Echo detection: discard if transcript matches recent TTS output
             if !lastSpokenText.isEmpty && isEcho(transcript: transcript, spokenText: lastSpokenText) {
                 print("Echo detected, discarding: \(transcript)")
-                if resumeListening {
-                    startHandsFree(settings: settings)
-                } else {
-                    state = .idle
-                }
+                finishPipeline(pipelineID, settings: settings, resumeListening: resumeListening)
                 return
             }
             
@@ -242,126 +305,117 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
             let userMessage = ChatMessage(role: .user, content: transcript, timestamp: Date())
             messages.append(userMessage)
             
-            // Step 2: LLM (streaming)
-            state = .thinking
-            let openclaw = OpenClawService(baseURL: settings.openclawURL, token: settings.gatewayToken)
-            
-            // Create placeholder assistant message for streaming
-            let assistantMessage = ChatMessage(role: .assistant, content: "", timestamp: Date())
-            messages.append(assistantMessage)
-            let messageIndex = messages.count - 1
-            
-            // Setup chunked TTS - speak while still streaming
-            let elevenlabs = ElevenLabsService(apiKey: settings.elevenlabsAPIKey, voiceID: settings.selectedVoiceID)
-            var sentenceBuffer = ""
-            var spokenUpTo = 0
-            var firstToken = true
-            var isFirstChunk = true
-            let chunkBreaks: [Character] = [".", "!", "?", "\n", ",", ";", ":", "-"]
-            let maxChunkLength = 120  // force chunk if no punctuation
-            
-            // Serial actor to ensure TTS chunks are enqueued in order
-            let ttsQueue = TTSChunkQueue(elevenlabs: elevenlabs, player: player)
-            
-            // Prepare audio session once before playback starts
-            player.prepareAudioSession()
-            
-            // Start audio queue
-            player.startQueue { [weak self] in
-                Task { @MainActor in
-                    guard let self else { return }
-                    self.stopSpeakingTimer()
-                    if resumeListening && settings.isHandsFree {
-                        // Brief ignore period to avoid picking up TTS echo
-                        self.recorder.setIgnorePeriod(1.5)
-                        self.startHandsFree(settings: settings)
-                    } else {
-                        self.state = .idle
-                    }
-                }
-            }
-            
-            // Helper to send a chunk to TTS (serialized)
-            func speakChunk(_ text: String) {
-                Task {
-                    await ttsQueue.enqueue(text: text)
-                }
-            }
-            
-            let fullResponse = try await openclaw.sendMessageStreaming(transcript) { [weak self] token in
-                Task { @MainActor in
-                    guard let self else { return }
-                    if firstToken {
-                        self.state = .streaming
-                        firstToken = false
-                    }
-                    // Append token to the streaming message
-                    self.messages[messageIndex].content += token
-                    sentenceBuffer += token
-                    
-                    // Determine if we should chunk now
-                    let trimmed = sentenceBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let minLength = isFirstChunk ? 5 : 8  // lower threshold for first chunk (faster start)
-                    let hasBreak = trimmed.last.map { chunkBreaks.contains($0) } ?? false
-                    let shouldChunk = (hasBreak && trimmed.count >= minLength) || trimmed.count >= maxChunkLength
-                    
-                    if shouldChunk && !trimmed.isEmpty {
-                        sentenceBuffer = ""
-                        spokenUpTo = self.messages[messageIndex].content.count
-                        isFirstChunk = false
-                        
-                        if self.state != .speaking {
-                            self.state = .speaking
-                            self.startSpeakingTimer()
-                        }
-                        
-                        speakChunk(trimmed)
-                    }
-                }
-            }
-            
-            // Ensure final content is complete
-            messages[messageIndex].content = fullResponse
-            
-            // Filter out silent/empty responses
-            let trimmedResponse = fullResponse.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmedResponse.isEmpty || trimmedResponse == "NO_REPLY" || trimmedResponse == "HEARTBEAT_OK" {
-                messages.remove(at: messageIndex)
-                player.stop()
-                if resumeListening && settings.isHandsFree {
-                    startHandsFree(settings: settings)
-                } else {
-                    state = .idle
-                }
-                return
-            }
-            
-            lastSpokenText = fullResponse.lowercased()
-            
-            // Speak any remaining text that wasn't chunked (serialized via queue)
-            let remaining = String(fullResponse.dropFirst(spokenUpTo)).trimmingCharacters(in: .whitespacesAndNewlines)
-            if !remaining.isEmpty {
-                if state != .speaking {
-                    state = .speaking
-                    startSpeakingTimer()
-                }
-                await ttsQueue.enqueue(text: remaining)
-            }
-            
-            // Signal no more chunks
-            player.finishQueue()
-            
+            try await streamAssistantResponse(
+                transcript: transcript,
+                settings: settings,
+                resumeListening: resumeListening,
+                pipelineID: pipelineID
+            )
+        } catch is CancellationError {
+            return
         } catch {
+            guard currentPipelineID == pipelineID else { return }
             print("Error: \(error)")
+            player.stop()
+            finishPipeline(pipelineID, settings: settings, resumeListening: resumeListening)
             let errorMessage = ChatMessage(role: .assistant, content: "⚠️ \(error.localizedDescription)\nTap to retry", timestamp: Date(), isError: true)
             messages.append(errorMessage)
-            
-            if resumeListening && settings.isHandsFree {
-                startHandsFree(settings: settings)
-            } else {
-                state = .idle
+        }
+    }
+    
+    private func streamAssistantResponse(transcript: String, settings: AppSettings, resumeListening: Bool, pipelineID: UUID) async throws {
+        try ensurePipelineIsActive(pipelineID)
+        
+        state = .thinking
+        let openclaw = OpenClawService(baseURL: settings.openclawURL, token: settings.gatewayToken)
+        let assistantMessage = ChatMessage(role: .assistant, content: "", timestamp: Date())
+        messages.append(assistantMessage)
+        let assistantMessageID = assistantMessage.id
+        
+        let elevenlabs = ElevenLabsService(apiKey: settings.elevenlabsAPIKey, voiceID: settings.selectedVoiceID)
+        let ttsQueue = TTSChunkQueue(elevenlabs: elevenlabs, player: player)
+        var sentenceBuffer = ""
+        var spokenUpTo = 0
+        var firstToken = true
+        var isFirstChunk = true
+        let chunkBreaks: [Character] = [".", "!", "?", "\n", ",", ";", ":", "-"]
+        let maxChunkLength = 120
+        
+        player.prepareAudioSession()
+        player.startQueue { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.finishPipeline(
+                    pipelineID,
+                    settings: settings,
+                    resumeListening: resumeListening,
+                    applyIgnorePeriod: true
+                )
             }
         }
+        
+        let fullResponse = try await openclaw.sendMessageStreaming(transcript) { [weak self] token in
+            guard let self else { return }
+            try self.ensurePipelineIsActive(pipelineID)
+            
+            if firstToken {
+                self.state = .streaming
+                firstToken = false
+            }
+
+            let messageIndex = try self.assistantMessageIndex(for: assistantMessageID, pipelineID: pipelineID)
+            self.messages[messageIndex].content += token
+            sentenceBuffer += token
+            
+            let trimmed = sentenceBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
+            let minLength = isFirstChunk ? 5 : 8
+            let hasBreak = trimmed.last.map { chunkBreaks.contains($0) } ?? false
+            let shouldChunk = (hasBreak && trimmed.count >= minLength) || trimmed.count >= maxChunkLength
+            
+            if shouldChunk && !trimmed.isEmpty {
+                sentenceBuffer = ""
+                spokenUpTo = self.messages[messageIndex].content.count
+                isFirstChunk = false
+                
+                if self.state != .speaking {
+                    self.state = .speaking
+                    self.startSpeakingTimer()
+                }
+                
+                try self.ensurePipelineIsActive(pipelineID)
+                await ttsQueue.enqueue(text: trimmed)
+                try self.ensurePipelineIsActive(pipelineID)
+            }
+        }
+        
+        try ensurePipelineIsActive(pipelineID)
+        let messageIndex = try assistantMessageIndex(for: assistantMessageID, pipelineID: pipelineID)
+        messages[messageIndex].content = fullResponse
+        
+        let trimmedResponse = fullResponse.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedResponse.isEmpty || trimmedResponse == "NO_REPLY" || trimmedResponse == "HEARTBEAT_OK" {
+            let messageIndex = try assistantMessageIndex(for: assistantMessageID, pipelineID: pipelineID)
+            messages.remove(at: messageIndex)
+            player.stop()
+            finishPipeline(pipelineID, settings: settings, resumeListening: resumeListening)
+            return
+        }
+        
+        lastSpokenText = fullResponse.lowercased()
+        
+        let remaining = String(fullResponse.dropFirst(spokenUpTo)).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !remaining.isEmpty {
+            if state != .speaking {
+                state = .speaking
+                startSpeakingTimer()
+            }
+            
+            try ensurePipelineIsActive(pipelineID)
+            await ttsQueue.enqueue(text: remaining)
+            try ensurePipelineIsActive(pipelineID)
+        }
+        
+        player.finishQueue()
     }
     
     // MARK: - Skip TTS
@@ -453,89 +507,24 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
         // Re-send via text (not audio)
         let transcript = lastUserMessage.content
         state = .thinking
-        
-        let openclaw = OpenClawService(baseURL: settings.openclawURL, token: settings.gatewayToken)
-        let elevenlabs = ElevenLabsService(apiKey: settings.elevenlabsAPIKey, voiceID: settings.selectedVoiceID)
-        
-        Task {
+
+        startPipeline { [weak self] pipelineID in
+            guard let self else { return }
             do {
-                let assistantMessage = ChatMessage(role: .assistant, content: "", timestamp: Date())
-                messages.append(assistantMessage)
-                let messageIndex = messages.count - 1
-                
-                var sentenceBuffer = ""
-                var spokenUpTo = 0
-                var firstToken = true
-                var isFirstChunk = true
-                let chunkBreaks: [Character] = [".", "!", "?", "\n", ",", ";", ":", "-"]
-                let maxChunkLength = 120
-                
-                let ttsQueue = TTSChunkQueue(elevenlabs: elevenlabs, player: player)
-                player.prepareAudioSession()
-                player.startQueue { [weak self] in
-                    Task { @MainActor in
-                        self?.stopSpeakingTimer()
-                        self?.state = .idle
-                    }
-                }
-                
-                func speakChunk(_ text: String) {
-                    Task { await ttsQueue.enqueue(text: text) }
-                }
-                
-                let fullResponse = try await openclaw.sendMessageStreaming(transcript) { [weak self] token in
-                    Task { @MainActor in
-                        guard let self else { return }
-                        if firstToken {
-                            self.state = .streaming
-                            firstToken = false
-                        }
-                        self.messages[messageIndex].content += token
-                        sentenceBuffer += token
-                        
-                        let trimmed = sentenceBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let minLength = isFirstChunk ? 5 : 8
-                        let hasBreak = trimmed.last.map { chunkBreaks.contains($0) } ?? false
-                        let shouldChunk = (hasBreak && trimmed.count >= minLength) || trimmed.count >= maxChunkLength
-                        
-                        if shouldChunk && !trimmed.isEmpty {
-                            sentenceBuffer = ""
-                            spokenUpTo = self.messages[messageIndex].content.count
-                            isFirstChunk = false
-                            if self.state != .speaking {
-                                self.state = .speaking
-                                self.startSpeakingTimer()
-                            }
-                            speakChunk(trimmed)
-                        }
-                    }
-                }
-                
-                messages[messageIndex].content = fullResponse
-                
-                let trimmedResponse = fullResponse.trimmingCharacters(in: .whitespacesAndNewlines)
-                if trimmedResponse.isEmpty || trimmedResponse == "NO_REPLY" || trimmedResponse == "HEARTBEAT_OK" {
-                    messages.remove(at: messageIndex)
-                    player.stop()
-                    state = .idle
-                    return
-                }
-                
-                lastSpokenText = fullResponse.lowercased()
-                let remaining = String(fullResponse.dropFirst(spokenUpTo)).trimmingCharacters(in: .whitespacesAndNewlines)
-                if !remaining.isEmpty {
-                    if state != .speaking {
-                        state = .speaking
-                        startSpeakingTimer()
-                    }
-                    await ttsQueue.enqueue(text: remaining)
-                }
-                player.finishQueue()
-                
+                try await self.streamAssistantResponse(
+                    transcript: transcript,
+                    settings: settings,
+                    resumeListening: false,
+                    pipelineID: pipelineID
+                )
+            } catch is CancellationError {
+                return
             } catch {
+                guard self.currentPipelineID == pipelineID else { return }
+                self.player.stop()
+                self.finishPipeline(pipelineID)
                 let errorMsg = ChatMessage(role: .assistant, content: "⚠️ \(error.localizedDescription)\nTap to retry", timestamp: Date(), isError: true)
-                messages.append(errorMsg)
-                state = .idle
+                self.messages.append(errorMsg)
             }
         }
     }
@@ -545,7 +534,11 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
     }
     
     func clearChat() {
+        cancelCurrentPipeline()
+        player.stop()
+        stopSpeakingTimer()
         messages.removeAll()
         UserDefaults.standard.removeObject(forKey: messagesKey)
+        state = .idle
     }
 }
