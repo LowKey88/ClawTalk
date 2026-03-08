@@ -3,11 +3,15 @@ import Foundation
 class OpenClawService {
     private let baseURL: String
     private let token: String
+    private let sessionKey: String
+    private let userID: String
     private var conversationHistory: [[String: String]] = []
     
-    init(baseURL: String, token: String) {
+    init(baseURL: String, token: String, sessionKey: String, userID: String) {
         self.baseURL = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         self.token = token
+        self.sessionKey = sessionKey
+        self.userID = userID
     }
     
     // MARK: - Streaming response
@@ -18,7 +22,7 @@ class OpenClawService {
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("agent:main:main", forHTTPHeaderField: "x-openclaw-session-key")
+        request.setValue(sessionKey, forHTTPHeaderField: "x-openclaw-session-key")
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         request.timeoutInterval = 300  // 5 min for long agent runs
         
@@ -28,7 +32,7 @@ class OpenClawService {
         let body: [String: Any] = [
             "model": "openclaw:main",
             "messages": messages,
-            "user": "syam",
+            "user": userID,
             "stream": true
         ]
         
@@ -81,7 +85,7 @@ class OpenClawService {
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("agent:main:main", forHTTPHeaderField: "x-openclaw-session-key")
+        request.setValue(sessionKey, forHTTPHeaderField: "x-openclaw-session-key")
         request.timeoutInterval = 60
         
         conversationHistory.append(["role": "user", "content": text])
@@ -90,7 +94,7 @@ class OpenClawService {
         let body: [String: Any] = [
             "model": "openclaw:main",
             "messages": messages,
-            "user": "syam"
+            "user": userID
         ]
         
         request.httpBody = try JSONSerialization.data(withJSONObject: body)

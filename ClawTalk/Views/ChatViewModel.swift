@@ -98,6 +98,7 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
     func switchToProfile(_ profileID: UUID?) {
         guard profileID != currentProfileID else { return }
         currentProfileID = profileID
+        lastSpokenText = ""
         loadMessages()
     }
     
@@ -240,7 +241,12 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
             
             // Step 2: LLM (streaming)
             state = .thinking
-            let openclaw = OpenClawService(baseURL: settings.openclawURL, token: settings.gatewayToken)
+            let openclaw = OpenClawService(
+                baseURL: settings.openclawURL,
+                token: settings.gatewayToken,
+                sessionKey: settings.activeSessionKey,
+                userID: settings.activeUserID
+            )
             
             // Create placeholder assistant message for streaming
             let assistantMessage = ChatMessage(role: .assistant, content: "", timestamp: Date())
@@ -450,7 +456,12 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
         let transcript = lastUserMessage.content
         state = .thinking
         
-        let openclaw = OpenClawService(baseURL: settings.openclawURL, token: settings.gatewayToken)
+        let openclaw = OpenClawService(
+            baseURL: settings.openclawURL,
+            token: settings.gatewayToken,
+            sessionKey: settings.activeSessionKey,
+            userID: settings.activeUserID
+        )
         let elevenlabs = ElevenLabsService(apiKey: settings.elevenlabsAPIKey, voiceID: settings.selectedVoiceID)
         
         Task {
@@ -540,7 +551,9 @@ class ChatViewModel: NSObject, AudioRecorderDelegate {
         messages.removeAll { $0.id == id }
     }
     
-    func clearChat() {
+    func clearChat(settings: AppSettings) {
+        settings.resetActiveConversation()
+        lastSpokenText = ""
         messages.removeAll()
         UserDefaults.standard.removeObject(forKey: messagesKey)
     }
